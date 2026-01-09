@@ -1,19 +1,43 @@
-name: Deploy
+name: CI - Pull Request
 on:
   push:
     branches:
-      - test # test
-      - develop # 개발 환경
-      - staging # 스테이징 환경
-      - main    # 프로덕션 환경
+      - test
+      - main
+  pull_request:
+    types: [opened]
+    branches:
+      - develop
 
 jobs:
-  test:
-    runs-on: ubuntu-22.04
+  test-and-build:
+    runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - name: Run tests
-        run: |
-          # 테스트 실행
-          echo "Tests passed!"
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'corretto'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Run test
+        run: ./gradlew clean test
+
+      - name: Build JAR
+        run: ./gradlew build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: lambda-jar
+          path: build/libs/*-all.jar
+
+
 
