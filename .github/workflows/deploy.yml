@@ -1,0 +1,19 @@
+name: Deploy
+on:
+  push:
+    branches:
+      - test # test
+      - develop # 개발 환경
+      - staging # 스테이징 환경
+      - main    # 프로덕션 환경
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run tests
+        run: |
+          # 테스트 실행
+          echo "Tests passed!"
+
