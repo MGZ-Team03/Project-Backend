@@ -1,4 +1,4 @@
-package helloworld;
+package auth;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -12,30 +12,34 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
+import com.google.gson.Gson;
+
 
 /**
  * Handler for requests to Lambda function.
  */
 public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
+    private final Gson gson = new Gson();
 
     public APIGatewayProxyResponseEvent handleRequest(final APIGatewayProxyRequestEvent input, final Context context) {
         Map<String, String> headers = new HashMap<>();
         headers.put("Content-Type", "application/json");
-        headers.put("X-Custom-Header", "application/json");
 
-        APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent()
-                .withHeaders(headers);
         try {
-            final String pageContents = this.getPageContents("https://checkip.amazonaws.com");
-            String output = String.format("{ \"message\": \"hello world\", \"location\": \"%s\" }", pageContents);
-
-            return response
+            Map<String,String> responseBody = new HashMap<>();
+            responseBody.put("status", "success");
+            responseBody.put("message", "Hello World! here Auth function");
+            return new APIGatewayProxyResponseEvent()
+                    .withHeaders(headers)
                     .withStatusCode(200)
-                    .withBody(output);
-        } catch (IOException e) {
-            return response
-                    .withBody("{}")
-                    .withStatusCode(500);
+                    .withBody(gson.toJson(responseBody));
+
+        } catch (Exception e){
+
+            return new APIGatewayProxyResponseEvent()
+                    .withHeaders(headers)
+                    .withStatusCode(400)
+                    .withBody(gson.toJson(e.getMessage()));
         }
     }
 

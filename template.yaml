@@ -12,6 +12,7 @@ Globals:
     Runtime: java21
     Architectures:
       - x86_64
+
 Resources:
   HelloWorldFunction:
     Type: AWS::Serverless::Function
@@ -173,6 +174,7 @@ Resources:
             Method: get
     Metadata:
       SamResourceId: StatisticsFunction
+
   AuthFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -193,8 +195,17 @@ Resources:
               Ref: MyApi
             Path: /api/auth/login
             Method: post
+        API3:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/auth
+            Method: get
+
     Metadata:
       SamResourceId: AuthFunction
+
   MyApi:
     Type: AWS::Serverless::Api
     Properties:

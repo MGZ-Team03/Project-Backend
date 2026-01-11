@@ -5,9 +5,69 @@ codeuri = "/Users/waney/Documents/backend/project02-backend/Project02-SpeakTrack
 runtime = "java21"
 architecture = "x86_64"
 handler = "helloworld.App::handleRequest"
-source_hash = "e1c60fc5fa835c732cfbb8e9961e9e5d6ab9d3838a55431f2c9dba513f1a2d2e"
+source_hash = "4827dd906e2a01f48ccdf09c81358d326fd1716acfc259a9dc7f711ae5cd9914"
 manifest_hash = ""
 packagetype = "Zip"
 functions = ["HelloWorldFunction"]
+
+[function_build_definitions.789585c7-3bd9-47d0-b471-86d23d267df3]
+codeuri = "/Users/waney/Documents/backend/project02-backend/Project02-SpeakTracker/TutorFunction"
+runtime = "java21"
+architecture = "x86_64"
+handler = "tutor.App::handleRequest"
+source_hash = "5d74f00508b32e629aad7def5a6cad0d227cb3b5374f686ec83e7f2d68bb05b0"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["TutorFunction"]
+
+[function_build_definitions.4a6d216b-3c08-4da3-9a89-50d05a58fe7e]
+codeuri = "/Users/waney/Documents/backend/project02-backend/Project02-SpeakTracker/SessionFunction"
+runtime = "java21"
+architecture = "x86_64"
+handler = "session.App::handleRequest"
+source_hash = "0473491096a2b72d2f4c826db77d6c1976d4d53ee7232e68e9e0e2dc0929b63a"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["SessionFunction"]
+
+[function_build_definitions.d6131100-c092-4024-a664-3f3349517787]
+codeuri = "/Users/waney/Documents/backend/project02-backend/Project02-SpeakTracker/SentencesFunction"
+runtime = "java21"
+architecture = "x86_64"
+handler = "sentences.App::handleRequest"
+source_hash = "504e108b9651628d1be16285f9d234e97f3e7cbfe3c4e8750fb70c5ab1e86242"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["SentencesFunction"]
+
+[function_build_definitions.a73f5f44-b7e8-4b8a-9a79-77dbe74c3853]
+codeuri = "/Users/waney/Documents/backend/project02-backend/Project02-SpeakTracker/TutorRegisterFunction"
+runtime = "java21"
+architecture = "x86_64"
+handler = "tutorRegister.App::handleRequest"
+source_hash = "2359227702fd7955a688de8fdd7bedd29459d607ab993153641a3902d04ae6ff"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["TutorRegisterFunction"]
+
+[function_build_definitions.ad6415b7-5bbd-49e1-a1bd-6e7924729b69]
+codeuri = "/Users/waney/Documents/backend/project02-backend/Project02-SpeakTracker/StatisticsFunction"
+runtime = "java21"
+architecture = "x86_64"
+handler = "statistics.App::handleRequest"
+source_hash = "43c02909ba554c414126b0a396486f67cc8f1e67234bfdfe7c21d819a4e9888a"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["StatisticsFunction"]
+
+[function_build_definitions.5966fb00-22b4-4892-902a-9e549f1b486c]
+codeuri = "/Users/waney/Documents/backend/project02-backend/Project02-SpeakTracker/AuthFunction"
+runtime = "java21"
+architecture = "x86_64"
+handler = "auth.App::handleRequest"
+source_hash = "c2129a90aa2a5633b9b7175ab639474181f435cbb17eeaed5bdb99a7315cbc60"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["AuthFunction"]
 
 [layer_build_definitions]

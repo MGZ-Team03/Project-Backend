@@ -1,4 +1,4 @@
-package helloworld;
+package tutorRegister;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -23,11 +23,12 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         headers.put("Content-Type", "application/json");
         headers.put("X-Custom-Header", "application/json");
 
+
         APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent()
                 .withHeaders(headers);
         try {
             final String pageContents = this.getPageContents("https://checkip.amazonaws.com");
-            String output = String.format("{ \"message\": \"hello world\", \"location\": \"%s\" }", pageContents);
+            String output = String.format("{ \"message\": \"tutor-Register\", \"location\": \"%s\" }", pageContents);
 
             return response
                     .withStatusCode(200)
