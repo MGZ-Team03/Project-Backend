@@ -17,8 +17,9 @@ lint = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-s3_prefix = "Project02-SpeakTracker"
+s3_prefix = "Project02-SpeakTracker-Auth"
 image_repositories = []
+stack_name = "Project02-SpeakTracker-Auth"
 
 [default.package.parameters]
 resolve_s3 = true

@@ -14,6 +14,96 @@ Globals:
       - x86_64
 
 Resources:
+  # Cognito User Pool for authentication
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    # 스택 삭제/업데이트 시에도 사용자 데이터 보호
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      # 동적 네이밍: 여러 환경(dev, staging, prod) 배포 시 충돌 방지
+      UserPoolName: !Sub "${AWS::StackName}-userpool"
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true  # 이메일 수정 허용
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          # 개발 편의성을 위해 비밀번호 정책 완화
+          RequireUppercase: false
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+
+  # Cognito User Pool Client
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    # 스택 삭제/업데이트 시에도 클라이언트 설정 보호
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ClientName: !Sub "${AWS::StackName}-client"
+      UserPoolId: !Ref UserPool
+      ExplicitAuthFlows:
+        # 1. [보안 권장] Secure Remote Password 인증 - 비밀번호가 네트워크 전송 안 됨
+        - ALLOW_USER_SRP_AUTH
+        # 2. [필수] 토큰 갱신 - Access Token 만료 시 재로그인 없이 갱신
+        - ALLOW_REFRESH_TOKEN_AUTH
+        # 3. [테스트/개발] 일반 아이디/비밀번호 인증 - Postman, Curl 테스트용
+        - ALLOW_USER_PASSWORD_AUTH
+      GenerateSecret: false  # 웹/모바일 앱은 비밀키를 안전하게 보관할 수 없으므로 false
+
+  # DynamoDB 테이블: 사용자 정보
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "${AWS::StackName}-users"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+
+  # DynamoDB 테이블: 튜터-학생 관계
+  TutorStudentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "${AWS::StackName}-tutor-students"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tutor_email
+          AttributeType: S
+        - AttributeName: student_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tutor_email
+          KeyType: HASH
+        - AttributeName: student_email
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: student_email-index
+          KeySchema:
+            - AttributeName: student_email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
   HelloWorldFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -179,7 +269,35 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: AuthFunction
-      Handler: auth.App::handleRequest
+      Handler: com.speaktracker.auth.AuthHandler::handleRequest
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPool
+          CLIENT_ID: !Ref UserPoolClient
+          USERS_TABLE: !Ref UsersTable
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - cognito-idp:AdminInitiateAuth
+              - cognito-idp:AdminCreateUser
+              - cognito-idp:AdminSetUserPassword
+              - cognito-idp:SignUp
+              - cognito-idp:InitiateAuth
+              - cognito-idp:GetUser
+              - cognito-idp:AdminGetUser
+            Resource: !GetAtt UserPool.Arn
+          - Effect: Allow
+            Action:
+              - dynamodb:PutItem
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:UpdateItem
+            Resource:
+              - !GetAtt UsersTable.Arn
+              - !GetAtt TutorStudentsTable.Arn
+              - !Sub "${TutorStudentsTable.Arn}/index/*"
       Events:
         API1:
           Type: Api
@@ -210,7 +328,29 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: Dev
-      Cors: '''*'''
+      # 프론트엔드 연결을 위한 상세 CORS 설정
+      Cors:
+        AllowOrigin: "'*'"
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+      # 4XX, 5XX 에러 응답에도 CORS 헤더 추가 (인증 실패 시 CORS 에러 방지)
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'*'"
+      # Cognito 인증기 설정
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+            IdentitySource: method.request.header.Authorization
 
 
 Outputs:
@@ -236,3 +376,16 @@ Outputs:
   AuthUrl:
     Value:
       Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/auth
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub ${AWS::StackName}-UserPoolId
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub ${AWS::StackName}-UserPoolClientId
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !GetAtt UserPool.Arn
