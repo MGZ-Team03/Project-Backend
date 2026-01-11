@@ -264,7 +264,6 @@ Resources:
             Method: get
     Metadata:
       SamResourceId: StatisticsFunction
-
   AuthFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -324,6 +323,15 @@ Resources:
     Metadata:
       SamResourceId: AuthFunction
 
+  SentencesWebSocketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: SentencesWebSocketFunction
+      Handler: websocket.App::handleRequest
+    Metadata:
+      SamResourceId: SentencesWebSocketFunction
+
+
   MyApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -351,6 +359,80 @@ Resources:
           CognitoAuthorizer:
             UserPoolArn: !GetAtt UserPool.Arn
             IdentitySource: method.request.header.Authorization
+
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: SpeakTrackerWebSocketAPI
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+
+  # Lambda 실행 권한
+  WebSocketLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SentencesWebSocketFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  # Lambda Integration
+  WebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SentencesWebSocketFunction.Arn}/invocations'
+
+
+
+  # $connect Route
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  # $disconnect Route
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  # $default Route
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  # Stage
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: Dev
+      ApiId: !Ref WebSocketApi
+      AutoDeploy: true
+
+  # Lambda에 WebSocket 연결 관리 권한 부여
+  WebSocketPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: WebSocketManageConnectionsPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'execute-api:ManageConnections'
+            Resource:
+              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+      Roles:
+        - !Ref SentencesWebSocketFunctionRole
 
 
 Outputs:
@@ -389,3 +471,7 @@ Outputs:
   UserPoolArn:
     Description: Cognito User Pool ARN
     Value: !GetAtt UserPool.Arn
+
+  WebSocketURL:
+    Description: WebSocket API URL
+    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
