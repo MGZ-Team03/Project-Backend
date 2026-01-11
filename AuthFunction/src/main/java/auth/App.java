@@ -1,4 +1,4 @@
-package helloworld;
+package auth;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -14,6 +14,7 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.google.gson.Gson;
 
+
 /**
  * Handler for requests to Lambda function.
  */
@@ -22,23 +23,23 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
 
     public APIGatewayProxyResponseEvent handleRequest(final APIGatewayProxyRequestEvent input, final Context context) {
         Map<String, String> headers = new HashMap<>();
-        Map<String, String> responseBody = new HashMap<>();
         headers.put("Content-Type", "application/json");
 
-        APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent()
-                .withHeaders(headers);
         try {
-
-            responseBody.put("message", "Hello World");
-
-            return response
+            Map<String,String> responseBody = new HashMap<>();
+            responseBody.put("status", "success");
+            responseBody.put("message", "Hello World! here Auth function");
+            return new APIGatewayProxyResponseEvent()
+                    .withHeaders(headers)
                     .withStatusCode(200)
                     .withBody(gson.toJson(responseBody));
-        } catch (Exception e) {
-           responseBody.put("message", e.getMessage());
-            return response
-                    .withBody(gson.toJson(responseBody))
-                    .withStatusCode(400);
+
+        } catch (Exception e){
+
+            return new APIGatewayProxyResponseEvent()
+                    .withHeaders(headers)
+                    .withStatusCode(400)
+                    .withBody(gson.toJson(e.getMessage()));
         }
     }
 

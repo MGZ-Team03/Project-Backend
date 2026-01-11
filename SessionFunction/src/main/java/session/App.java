@@ -1,4 +1,4 @@
-package helloworld;
+package session;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -6,39 +6,40 @@ import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
-import com.google.gson.Gson;
 
 /**
  * Handler for requests to Lambda function.
  */
 public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
-    private final Gson gson = new Gson();
 
     public APIGatewayProxyResponseEvent handleRequest(final APIGatewayProxyRequestEvent input, final Context context) {
+
         Map<String, String> headers = new HashMap<>();
-        Map<String, String> responseBody = new HashMap<>();
         headers.put("Content-Type", "application/json");
+
+        String path = input.getPath();
+        Logger.getLogger("path: "+path);
 
         APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent()
                 .withHeaders(headers);
         try {
-
-            responseBody.put("message", "Hello World");
+            final String pageContents = this.getPageContents("https://checkip.amazonaws.com");
+            String output = String.format("{ \"message\": \"session\", \"location\": \"%s\" }", pageContents);
 
             return response
                     .withStatusCode(200)
-                    .withBody(gson.toJson(responseBody));
-        } catch (Exception e) {
-           responseBody.put("message", e.getMessage());
+                    .withBody(output);
+        } catch (IOException e) {
             return response
-                    .withBody(gson.toJson(responseBody))
-                    .withStatusCode(400);
+                    .withBody("{}")
+                    .withStatusCode(500);
         }
     }
 

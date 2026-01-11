@@ -2,14 +2,23 @@
 subprojects {
     apply plugin: 'java'
 
-    sourceCompatibility = 17
-    targetCompatibility = 17
+    sourceCompatibility = 21
+    targetCompatibility = 21
 
     repositories {
         mavenCentral()
     }
 
     dependencies {
+
+        implementation 'com.google.code.gson:gson:2.10.1'
+
+        // AWS SDK v2
+        implementation platform('software.amazon.awssdk:bom:2.20.26')
+        implementation 'software.amazon.awssdk:dynamodb'
+        implementation 'software.amazon.awssdk:s3'
+        implementation 'software.amazon.awssdk:ses'
+
         implementation 'com.amazonaws:aws-lambda-java-core:1.2.3'
         implementation 'com.amazonaws:aws-lambda-java-events:3.11.0'
     }

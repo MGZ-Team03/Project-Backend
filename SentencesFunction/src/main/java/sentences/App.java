@@ -1,4 +1,4 @@
-package helloworld;
+package sentences;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -18,27 +18,26 @@ import com.google.gson.Gson;
  * Handler for requests to Lambda function.
  */
 public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
-    private final Gson gson = new Gson();
+
+    private Gson gson = new Gson();
 
     public APIGatewayProxyResponseEvent handleRequest(final APIGatewayProxyRequestEvent input, final Context context) {
         Map<String, String> headers = new HashMap<>();
-        Map<String, String> responseBody = new HashMap<>();
         headers.put("Content-Type", "application/json");
 
-        APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent()
-                .withHeaders(headers);
+        APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
+        response.withHeaders(headers);
         try {
-
-            responseBody.put("message", "Hello World");
+            Map<String, String> responseBody = new HashMap<>();
+            responseBody.put("message","reponse to sentence body");
 
             return response
                     .withStatusCode(200)
                     .withBody(gson.toJson(responseBody));
         } catch (Exception e) {
-           responseBody.put("message", e.getMessage());
             return response
-                    .withBody(gson.toJson(responseBody))
-                    .withStatusCode(400);
+                    .withBody("{}")
+                    .withStatusCode(500);
         }
     }
 

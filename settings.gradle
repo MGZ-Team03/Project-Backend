@@ -1,2 +1,8 @@
 rootProject.name = 'Project02-SpeakTracker'
 include 'HelloWorldFunction'
+include 'TutorFunction'
+include 'SessionFunction'
+include 'SentencesFunction'
+include 'TutorRegisterFunction'
+include 'StatisticsFunction'
+include 'AuthFunction'

@@ -1,14 +1,13 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: >
-  Project02-SpeakTracker
+Description: 'Project02-SpeakTracker
 
   Sample SAM Template for Project02-SpeakTracker
 
-# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+  '
 Globals:
   Function:
-    Timeout: 20
+    Timeout: 30
     MemorySize: 512
     Runtime: java21
     Architectures:
@@ -16,30 +15,224 @@ Globals:
 
 Resources:
   HelloWorldFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Type: AWS::Serverless::Function
     Properties:
       CodeUri: HelloWorldFunction
       Handler: helloworld.App::handleRequest
-      Environment: # More info about Env Vars: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#environment-object
-        Variables:
-          PARAM1: VALUE
       Events:
         HelloWorld:
-          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Type: Api
           Properties:
+            RestApiId:
+              Ref: MyApi
             Path: /hello
             Method: get
+    Metadata:
+      SamResourceId: HelloWorldFunction
+  TutorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: TutorFunction
+      Handler: tutor.App::handleRequest
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/students
+            Method: get
+        API2:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/students/{email}
+            Method: get
+        API3:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/students/{email}/history
+            Method: get
+        API4:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/feedback
+            Method: post
+    Metadata:
+      SamResourceId: TutorFunction
+  SessionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: SessionFunction
+      Handler: session.App::handleRequest
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/sessions/start
+            Method: post
+        API2:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/sessions/end
+            Method: post
+        API3:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/sessions/history
+            Method: get
+    Metadata:
+      SamResourceId: SessionFunction
+  SentencesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: SentencesFunction
+      Handler: sentences.App::handleRequest
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/sentences
+            Method: get
+        API2:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/sentences/{id}/audio
+            Method: get
+    Metadata:
+      SamResourceId: SentencesFunction
+  TutorRegisterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: TutorRegisterFunction
+      Handler: tutorRegister.App::handleRequest
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor-register
+            Method: get
+        API2:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor-register/{email}/request
+            Method: post
+        API3:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor-register/requests/{id}/approve
+            Method: post
+        API4:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor-register/requests/{id}/reject
+            Method: post
+    Metadata:
+      SamResourceId: TutorRegisterFunction
+  StatisticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: StatisticsFunction
+      Handler: statistics.App::handleRequest
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/statistics/today
+            Method: get
+        API2:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/statistics/weekly
+            Method: get
+    Metadata:
+      SamResourceId: StatisticsFunction
+
+  AuthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: AuthFunction
+      Handler: auth.App::handleRequest
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/auth/register
+            Method: post
+        API2:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/auth/login
+            Method: post
+        API3:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/auth
+            Method: get
+
+    Metadata:
+      SamResourceId: AuthFunction
+
+  MyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Dev
+      Cors: '''*'''
+
 
 Outputs:
-  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
-  # Find out more about other implicit resources you can reference within SAM
-  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  HelloWorldApi:
-    Description: "API Gateway endpoint URL for Prod stage for Hello World function"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/hello/"
-  HelloWorldFunction:
-    Description: "Hello World Lambda Function ARN"
-    Value: !GetAtt HelloWorldFunction.Arn
-  HelloWorldFunctionIamRole:
-    Description: "Implicit IAM Role created for Hello World function"
-    Value: !GetAtt HelloWorldFunctionRole.Arn
+  ApiEndpoint:
+    Description: API Gateway Base URL
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev
+  HelloWorldUrl:
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/hello
+  TutorsListUrl:
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/tutors
+  SessionsUrl:
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/sessions
+  SentencesUrl:
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/sentences
+  StatisticsUrl:
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/statistics
+  AuthUrl:
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/auth
