@@ -19,6 +19,9 @@ subprojects {
         implementation 'software.amazon.awssdk:s3'
         implementation 'software.amazon.awssdk:ses'
 
+        // WebSocket 지원을 위한 AWS SDK
+        implementation 'software.amazon.awssdk:apigatewaymanagementapi:2.20.0'
+
         implementation 'com.amazonaws:aws-lambda-java-core:1.2.3'
         implementation 'com.amazonaws:aws-lambda-java-events:3.11.0'
     }

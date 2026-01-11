@@ -8,7 +8,7 @@ on:
   pull_request:
     types: [opened]
     branches:
-      - main
+      - develop
 
 jobs:
   test-and-build:
