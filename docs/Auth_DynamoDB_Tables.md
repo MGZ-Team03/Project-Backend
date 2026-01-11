@@ -1,8 +1,8 @@
-# DynamoDB 테이블 설명
+# 회원가입/로그인 DynamoDB 테이블
 
 ## 개요
 
-SpeakTracker 프로젝트에서 사용하는 DynamoDB 테이블 구조입니다.
+SpeakTracker 프로젝트의 **회원가입 및 로그인(Auth)** 기능에서 사용하는 DynamoDB 테이블 구조입니다.
 
 ---
 
