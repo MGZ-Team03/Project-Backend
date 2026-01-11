@@ -286,6 +286,7 @@ Resources:
               - cognito-idp:InitiateAuth
               - cognito-idp:GetUser
               - cognito-idp:AdminGetUser
+              - cognito-idp:ConfirmSignUp
             Resource: !GetAtt UserPool.Arn
           - Effect: Allow
             Action:
@@ -313,6 +314,20 @@ Resources:
             Path: /api/auth/login
             Method: post
         API3:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/auth/confirm
+            Method: post
+        API4:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/auth/user
+            Method: get
+        API5:
           Type: Api
           Properties:
             RestApiId:
