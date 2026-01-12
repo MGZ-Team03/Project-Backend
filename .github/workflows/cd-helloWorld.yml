@@ -1,4 +1,4 @@
-yamlname: Deploy HelloWorldFunction
+name: Deploy HelloWorldFunction
 
 on:
   push:
