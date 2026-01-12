@@ -12,6 +12,16 @@ Globals:
     Runtime: java21
     Architectures:
       - x86_64
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+        SESSIONS_TABLE: !Ref LearningSessionsTable
+        STATISTICS_TABLE: !Ref DailyStatisticsTable
+        AI_CONVERSATIONS_TABLE: !Ref AIConversationsTable
+        FEEDBACK_TABLE: !Ref FeedbackMessagesTable
+        CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
+        SENTENCES_TABLE: !Ref SentencesTable
 
 Resources:
   # Cognito User Pool for authentication
@@ -63,28 +73,11 @@ Resources:
         - ALLOW_USER_PASSWORD_AUTH
       GenerateSecret: false  # 웹/모바일 앱은 비밀키를 안전하게 보관할 수 없으므로 false
 
-  # DynamoDB 테이블: 사용자 정보
-  UsersTable:
+  # IAM Roles
+  CommonLambdaRole:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
-      TableName: !Sub "${AWS::StackName}-users"
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: email
-          AttributeType: S
-      KeySchema:
-        - AttributeName: email
-          KeyType: HASH
-
-  # DynamoDB 테이블: 튜터-학생 관계
-  TutorStudentsTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      TableName: !Sub "${AWS::StackName}-tutor-students"
+      TableName: !Sub '${AWS::StackName}-tutor-students'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: tutor_email
@@ -103,12 +96,485 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
+      Tags:
+        - Key: Name
+          Value: Tutor Students Table
+
+  # 3. Learning Sessions 테이블
+  LearningSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-learning-sessions'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: student_email
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: tutor_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: student_email
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: tutor_email-timestamp-index
+          KeySchema:
+            - AttributeName: tutor_email
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: Learning Sessions Table
+
+  # 4. Daily Statistics 테이블
+  DailyStatisticsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-daily-statistics'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: student_email
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: student_email
+          KeyType: HASH
+        - AttributeName: date
+          KeyType: RANGE
+      Tags:
+        - Key: Name
+          Value: Daily Statistics Table
+
+  # 5. AI Conversations 테이블
+  AIConversationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-ai-conversations'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: student_email
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: student_email
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: AI Conversations Table
+
+  # 6. Feedback Messages 테이블
+  FeedbackMessagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-feedback-messages'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: composite_key
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: student_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: composite_key
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: student_email-timestamp-index
+          KeySchema:
+            - AttributeName: student_email
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: Feedback Messages Table
+
+  # 7. WebSocket Connections 테이블
+  WebSocketConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-websocket-connections'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+        - AttributeName: user_email
+          AttributeType: S
+        - AttributeName: tutor_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user_email-index
+          KeySchema:
+            - AttributeName: user_email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: tutor_email-index
+          KeySchema:
+            - AttributeName: tutor_email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: WebSocket Connections Table
+
+  # 8. Sentences 테이블
+  SentencesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-sentences'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: category
+          AttributeType: S
+        - AttributeName: sentence_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: category
+          KeyType: HASH
+        - AttributeName: sentence_id
+          KeyType: RANGE
+      Tags:
+        - Key: Name
+          Value: Sentences Table
+
+  CommonLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBFullAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt UsersTable.Arn
+                  - !GetAtt TutorStudentsTable.Arn
+                  - !GetAtt LearningSessionsTable.Arn
+                  - !GetAtt DailyStatisticsTable.Arn
+                  - !GetAtt AIConversationsTable.Arn
+                  - !GetAtt FeedbackMessagesTable.Arn
+                  - !GetAtt WebSocketConnectionsTable.Arn
+                  - !GetAtt SentencesTable.Arn
+                  # GSI도 포함
+                  - !Sub '${UsersTable.Arn}/index/*'
+                  - !Sub '${TutorStudentsTable.Arn}/index/*'
+                  - !Sub '${LearningSessionsTable.Arn}/index/*'
+                  - !Sub '${DailyStatisticsTable.Arn}/index/*'
+                  - !Sub '${AIConversationsTable.Arn}/index/*'
+                  - !Sub '${FeedbackMessagesTable.Arn}/index/*'
+                  - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
+                  - !Sub '${SentencesTable.Arn}/index/*'
+
+  # WebSocket 전용 Role
+  WebSocketLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBFullAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:*
+                Resource:
+                  - !GetAtt UsersTable.Arn
+                  - !GetAtt TutorStudentsTable.Arn
+                  - !GetAtt LearningSessionsTable.Arn
+                  - !GetAtt DailyStatisticsTable.Arn
+                  - !GetAtt AIConversationsTable.Arn
+                  - !GetAtt FeedbackMessagesTable.Arn
+                  - !GetAtt WebSocketConnectionsTable.Arn
+                  - !GetAtt SentencesTable.Arn
+                  - !Sub '${UsersTable.Arn}/index/*'
+                  - !Sub '${TutorStudentsTable.Arn}/index/*'
+                  - !Sub '${LearningSessionsTable.Arn}/index/*'
+                  - !Sub '${DailyStatisticsTable.Arn}/index/*'
+                  - !Sub '${AIConversationsTable.Arn}/index/*'
+                  - !Sub '${FeedbackMessagesTable.Arn}/index/*'
+                  - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
+                  - !Sub '${SentencesTable.Arn}/index/*'
+        - PolicyName: WebSocketManageConnections
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'execute-api:ManageConnections'
+                Resource:
+                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  # 1. Users 테이블
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-users'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+      Tags:
+        - Key: Name
+          Value: Users Table
+
+  # 2. Tutor-Students 매칭 테이블
+  TutorStudentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-tutor-students'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tutor_email
+          AttributeType: S
+        - AttributeName: student_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tutor_email
+          KeyType: HASH
+        - AttributeName: student_email
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: student_email-index
+          KeySchema:
+            - AttributeName: student_email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Name
+          Value: Tutor Students Table
+
+  # 3. Learning Sessions 테이블
+  LearningSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-learning-sessions'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: student_email
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: tutor_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: student_email
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: tutor_email-timestamp-index
+          KeySchema:
+            - AttributeName: tutor_email
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: Learning Sessions Table
+
+  # 4. Daily Statistics 테이블
+  DailyStatisticsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-daily-statistics'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: student_email
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: student_email
+          KeyType: HASH
+        - AttributeName: date
+          KeyType: RANGE
+      Tags:
+        - Key: Name
+          Value: Daily Statistics Table
+
+  # 5. AI Conversations 테이블
+  AIConversationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-ai-conversations'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: student_email
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: student_email
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: AI Conversations Table
+
+  # 6. Feedback Messages 테이블
+  FeedbackMessagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-feedback-messages'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: composite_key
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: student_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: composite_key
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: student_email-timestamp-index
+          KeySchema:
+            - AttributeName: student_email
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: Feedback Messages Table
+
+  # 7. WebSocket Connections 테이블
+  WebSocketConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-websocket-connections'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+        - AttributeName: user_email
+          AttributeType: S
+        - AttributeName: tutor_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user_email-index
+          KeySchema:
+            - AttributeName: user_email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: tutor_email-index
+          KeySchema:
+            - AttributeName: tutor_email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: WebSocket Connections Table
+
+  # 8. Sentences 테이블
+  SentencesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-sentences'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: category
+          AttributeType: S
+        - AttributeName: sentence_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: category
+          KeyType: HASH
+        - AttributeName: sentence_id
+          KeyType: RANGE
+      Tags:
+        - Key: Name
+          Value: Sentences Table
 
   HelloWorldFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: HelloWorldFunction
       Handler: helloworld.App::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Events:
         HelloWorld:
           Type: Api
@@ -119,11 +585,13 @@ Resources:
             Method: get
     Metadata:
       SamResourceId: HelloWorldFunction
+
   TutorFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: TutorFunction
       Handler: tutor.App::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Events:
         API1:
           Type: Api
@@ -155,11 +623,13 @@ Resources:
             Method: post
     Metadata:
       SamResourceId: TutorFunction
+
   SessionFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: SessionFunction
       Handler: session.App::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Events:
         API1:
           Type: Api
@@ -184,11 +654,13 @@ Resources:
             Method: get
     Metadata:
       SamResourceId: SessionFunction
+
   SentencesFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: SentencesFunction
       Handler: sentences.App::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Events:
         API1:
           Type: Api
@@ -211,6 +683,7 @@ Resources:
     Properties:
       CodeUri: TutorRegisterFunction
       Handler: tutorRegister.App::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Events:
         API1:
           Type: Api
@@ -242,11 +715,13 @@ Resources:
             Method: post
     Metadata:
       SamResourceId: TutorRegisterFunction
+
   StatisticsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: StatisticsFunction
       Handler: statistics.App::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Events:
         API1:
           Type: Api
@@ -269,6 +744,7 @@ Resources:
     Properties:
       CodeUri: AuthFunction
       Handler: com.speaktracker.auth.AuthHandler::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Environment:
         Variables:
           USER_POOL_ID: !Ref UserPool
@@ -343,6 +819,14 @@ Resources:
     Properties:
       CodeUri: SentencesWebSocketFunction
       Handler: websocket.App::handleRequest
+      Role: !GetAtt WebSocketLambdaRole.Arn
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - 'execute-api:ManageConnections'
+              Resource:
+                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
     Metadata:
       SamResourceId: SentencesWebSocketFunction
 
@@ -399,8 +883,6 @@ Resources:
       IntegrationType: AWS_PROXY
       IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SentencesWebSocketFunction.Arn}/invocations'
 
-
-
   # $connect Route
   ConnectRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -433,21 +915,21 @@ Resources:
       ApiId: !Ref WebSocketApi
       AutoDeploy: true
 
-  # Lambda에 WebSocket 연결 관리 권한 부여
-  WebSocketPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: WebSocketManageConnectionsPolicy
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Action:
-              - 'execute-api:ManageConnections'
-            Resource:
-              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-      Roles:
-        - !Ref SentencesWebSocketFunctionRole
+#  # Lambda에 WebSocket 연결 관리 권한 부여
+#  WebSocketPolicy:
+#    Type: AWS::IAM::Policy
+#    Properties:
+#      PolicyName: WebSocketManageConnectionsPolicy
+#      PolicyDocument:
+#        Version: '2012-10-17'
+#        Statement:
+#          - Effect: Allow
+#            Action:
+#              - 'execute-api:ManageConnections'
+#            Resource:
+#              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+#      Roles:
+#        - !Ref SentencesWebSocketFunctionRole
 
 
 Outputs:
@@ -490,3 +972,51 @@ Outputs:
   WebSocketURL:
     Description: WebSocket API URL
     Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
+
+  UsersTableName:
+    Description: Users Table Name
+    Value: !Ref UsersTable
+    Export:
+      Name: !Sub '${AWS::StackName}-UsersTable'
+
+  TutorStudentsTableName:
+    Description: Tutor Students Table Name
+    Value: !Ref TutorStudentsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TutorStudentsTable'
+
+  LearningSessionsTableName:
+    Description: Learning Sessions Table Name
+    Value: !Ref LearningSessionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-LearningSessionsTable'
+
+  DailyStatisticsTableName:
+    Description: Daily Statistics Table Name
+    Value: !Ref DailyStatisticsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DailyStatisticsTable'
+
+  AIConversationsTableName:
+    Description: AI Conversations Table Name
+    Value: !Ref AIConversationsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AIConversationsTable'
+
+  FeedbackMessagesTableName:
+    Description: Feedback Messages Table Name
+    Value: !Ref FeedbackMessagesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-FeedbackMessagesTable'
+
+  WebSocketConnectionsTableName:
+    Description: WebSocket Connections Table Name
+    Value: !Ref WebSocketConnectionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-WebSocketConnectionsTable'
+
+  SentencesTableName:
+    Description: Sentences Table Name
+    Value: !Ref SentencesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SentencesTable'
