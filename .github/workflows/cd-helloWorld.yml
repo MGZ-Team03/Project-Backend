@@ -49,3 +49,12 @@ jobs:
             --no-fail-on-empty-changeset \
             --capabilities CAPABILITY_IAM \
             --region ap-northeast-2
+
+      # WebSocket 확인
+      - name: Verify WebSocket
+        run: |
+          WS_URL=$(aws cloudformation describe-stacks \
+            --stack-name Project02-SpeakTracker-Auth \
+            --query 'Stacks[0].Outputs[?OutputKey==`WebSocketURL`].OutputValue' \
+            --output text)
+          echo "✅ WebSocket URL: $WS_URL
