@@ -1,4 +1,4 @@
-name: Deploy HelloWorldFunction
+name: cd HelloWorldFunction
 
 on:
   push:
