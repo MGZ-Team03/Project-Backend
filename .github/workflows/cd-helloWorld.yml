@@ -40,10 +40,10 @@ jobs:
         run: |
           JAR_FILE=$(find HelloWorldFunction/build/libs -name "*.jar" ! -name "*-plain.jar")
           aws lambda update-function-code \
-            --function-name Project02-SpeakTracker-Auth-SentencesFunction-Vr9hlknuoQSb \
+            --function-name Project02-SpeakTracker-HelloWorldFunction-CWf6a6tIQDQf \
             --zip-file fileb://$JAR_FILE
 
       - name: Wait for update
         run: |
           aws lambda wait function-updated \
-            --function-name Project02-SpeakTracker-Auth-SentencesFunction-Vr9hlknuoQSb
+            --function-name Project02-SpeakTracker-HelloWorldFunction-CWf6a6tIQDQf
