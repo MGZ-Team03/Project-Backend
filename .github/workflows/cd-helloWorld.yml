@@ -1,0 +1,48 @@
+name: Deploy SentencesFunction
+
+on:
+  push:
+    branches:
+      - config/12-gitAction-cd-setting
+    paths:
+      - 'HelloWorldFunction/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'corretto'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Build
+        run: |
+          cd SentencesFunction
+          chmod +x gradlew
+          ./gradlew clean build
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Deploy to Lambda
+        run: |
+          JAR_FILE=$(find HelloWorldFunction/build/libs -name "*.jar" ! -name "*-plain.jar")
+          aws lambda update-function-code \
+            --function-name HelloWorldFunction \
+            --zip-file fileb://$JAR_FILE
+
+      - name: Wait for update
+        run: |
+          aws lambda wait function-updated \
+            --function-name HelloWorldFunction
