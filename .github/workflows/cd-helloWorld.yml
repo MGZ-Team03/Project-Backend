@@ -41,11 +41,9 @@ jobs:
         run: sam build HelloWorldFunction
 
         # SAM deploy (전체 스택 업데이트, 하지만 실제로는 변경된 함수만)
-      - name: SAM Deploy
+      - name: Deploy specific function
         run: |
-          sam deploy \
-            --stack-name Project02-SpeakTracker \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --capabilities CAPABILITY_IAM \
-            --region ap-northeast-2
+          JAR_FILE=$(find .aws-sam/build/HelloWorldFunction -name "*.jar")
+          aws lambda update-function-code \
+            --function-name Project02-SpeakTracker-HelloWorldFunction-CWf6a6tIQDQf \
+            --zip-file fileb://$JAR_FILE
