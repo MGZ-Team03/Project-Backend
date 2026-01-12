@@ -1,11 +1,11 @@
-name: Deploy SentencesFunction
+yamlname: Deploy HelloWorldFunction
 
 on:
   push:
     branches:
       - config/12-gitAction-cd-setting
     paths:
-      - 'HelloWorldFunction/**'
+      - 'HelloWorldFunction/**'  # ✅
 
 jobs:
   deploy:
@@ -24,7 +24,7 @@ jobs:
 
       - name: Build
         run: |
-          cd SentencesFunction
+          cd HelloWorldFunction  # ✅
           chmod +x gradlew
           ./gradlew clean build
 
@@ -37,12 +37,12 @@ jobs:
 
       - name: Deploy to Lambda
         run: |
-          JAR_FILE=$(find HelloWorldFunction/build/libs -name "*.jar" ! -name "*-plain.jar")
+          JAR_FILE=$(find HelloWorldFunction/build/libs -name "*.jar" ! -name "*-plain.jar")  # ✅
           aws lambda update-function-code \
-            --function-name HelloWorldFunction \
+            --function-name HelloWorldFunction \  # ✅
             --zip-file fileb://$JAR_FILE
 
       - name: Wait for update
         run: |
           aws lambda wait function-updated \
-            --function-name HelloWorldFunction
+            --function-name HelloWorldFunction  # ✅
