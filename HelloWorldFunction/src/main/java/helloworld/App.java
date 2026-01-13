@@ -33,8 +33,8 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
                 .withHeaders(headers);
         try {
 
-            responseBody.put("message", "Hello World cd 테스트###!@#$???");
-            responseBody.put("cd!!", "websocket error test....");
+            responseBody.put("message", "Hello World cd 테스트");
+            responseBody.put("cd!!", "websocket test 260113");
 
             return response
                     .withStatusCode(200)
