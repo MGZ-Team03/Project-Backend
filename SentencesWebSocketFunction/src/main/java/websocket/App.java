@@ -119,7 +119,7 @@ public class App implements RequestHandler<APIGatewayV2WebSocketEvent, APIGatewa
 
         Map<String, Object> response = new HashMap<>();
         response.put("type", "response");
-        response.put("message", "메시지를 받았습니다!");
+        response.put("message", "메시지를 받았습니다! cd 테스트중입니다!!");
         response.put("receivedData", receivedData);
         response.put("time", getCurrentTime());
         response.put("connectionId", connectionId);
