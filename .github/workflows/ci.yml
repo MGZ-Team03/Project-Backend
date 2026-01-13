@@ -1,12 +1,6 @@
 name: CI - Pull Request
 on:
-  push:
-    branches:
-      - test
-      - develop
-      - main
   pull_request:
-    types: [opened]
     branches:
       - develop
 

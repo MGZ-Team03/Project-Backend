@@ -1,14 +1,9 @@
-name: CD - Deploy
+name: CD - Deploy(prod)
 
 on:
   push:
     branches:
-      - develop
       - main
-  pull_request:
-    types: [ opened ]
-    branches:
-      - develop
 
 jobs:
   deploy:
