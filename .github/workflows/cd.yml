@@ -1,14 +1,18 @@
-name: cd HelloWorldFunction
+name: CD - Deploy
 
 on:
   push:
     branches:
-      - config/12-gitAction-cd-setting
+      - develop
+      - main
+  pull_request:
+    types: [ opened ]
+    branches:
+      - develop
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
 
     steps:
       - name: Checkout
@@ -33,11 +37,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-2
 
-
       - name: SAM Build
         run: sam build
 
-        # SAM deploy (전체 스택 업데이트, 하지만 실제로는 변경된 함수만)
       - name: SAM Deploy
         run: |
           sam deploy \
