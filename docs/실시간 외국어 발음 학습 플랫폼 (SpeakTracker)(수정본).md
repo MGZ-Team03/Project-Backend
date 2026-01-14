@@ -446,17 +446,18 @@ async function notifyTutor(studentEmail, status) {
 | 3 | 발음 감지 (TensorFlow.js + Web Audio) |
 | 4 | 문장 연습 기능 (문장 표시, Polly TTS, 발음 측정) |
 | 5 | WebSocket 기본 (연결, 상태 전송) |
-| 6-7 | 튜터 대시보드 (학생 목록, 실시간 상태) |
+| 6-7 | 관리자 대시보드 (학생 목록, 실시간 상태) |
 
 ### Week 2: AI 대화 + 마무리
 
 | Day | 작업 |
 |-----|------|
 | 8-9 | AI 대화 기능 (Claude API + Polly TTS) |
-| 10 | 튜터 피드백 기능 (텍스트/TTS 전송) |
+| 10 | WebSocket 채팅 (튜터 피드백 기능) (텍스트/TTS 전송) |
 | 11 | 통계 기능 (일별/주별 학습 현황) |
 | 12 | WebSocket fanout (1:N 브로드캐스트) |
 | 13-14 | 통합 테스트, 버그 수정, 배포 |
+| 15 | 메일기능(SQS, SES)
 
 ---
 
