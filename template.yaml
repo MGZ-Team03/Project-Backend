@@ -393,8 +393,11 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: TutorFunction
-      Handler: tutor.App::handleRequest
+      Handler: com.speacktracker.tutor.TutorFeedbackHandler::handleRequest
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Environment:
+        Variables:
+          WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WebSocketApiStage}'
       Events:
         API1:
           Type: Api
@@ -424,6 +427,13 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/feedback
             Method: post
+        API5:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/feedback
+            Method: get
     Metadata:
       SamResourceId: TutorFunction
 

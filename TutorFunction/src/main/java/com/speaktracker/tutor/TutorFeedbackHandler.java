@@ -1,8 +1,11 @@
-package tutor;
+package com.speaktracker.tutor;
 
 import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
+import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
+import com.google.gson.JsonSyntaxException;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient;
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest;
@@ -17,17 +20,17 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 튜터 피드백 핸들러 클래스
+ * 튜터 피드백 Lambda 핸들러
  * 
  * 주요 기능:
  * 1. 피드백 메시지 수신 및 검증
  * 2. DynamoDB에 피드백 저장
  * 3. WebSocket을 통해 학생에게 피드백 전송
  */
-public class TutorFeedbackHandler {
+public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
-    private static final String FEEDBACK_TABLE = System.getenv("FEEDBACK_MESSAGES_TABLE");
-    private static final String WEBSOCKET_TABLE = System.getenv("WEBSOCKET_CONNECTIONS_TABLE");
+    private static final String FEEDBACK_TABLE = System.getenv("FEEDBACK_TABLE");
+    private static final String CONNECTIONS_TABLE = System.getenv("CONNECTIONS_TABLE");
     private static final String WEBSOCKET_ENDPOINT = System.getenv("WEBSOCKET_ENDPOINT");
     
     private final DynamoDbClient dynamoDbClient;
@@ -39,9 +42,94 @@ public class TutorFeedbackHandler {
     }
 
     /**
-     * 피드백 메시지 처리 메인 메서드
+     * Lambda 핸들러 메인 메서드
      */
-    public Map<String, Object> processFeedback(Map<String, Object> requestBody, Context context) {
+    @Override
+    public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent input, Context context) {
+        context.getLogger().log("📩 Received request: " + input.getPath() + " " + input.getHttpMethod());
+
+        try {
+            // POST /api/tutor/feedback
+            if ("POST".equals(input.getHttpMethod()) && input.getPath().contains("/feedback")) {
+                return handlePostFeedback(input, context);
+            }
+
+            // GET /api/tutor/feedback
+            if ("GET".equals(input.getHttpMethod()) && input.getPath().contains("/feedback")) {
+                return handleGetFeedback(input, context);
+            }
+
+            return createResponse(404, createErrorResponse("Endpoint not found"));
+
+        } catch (Exception e) {
+            context.getLogger().log("❌ Error: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(500, createErrorResponse("Internal server error: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * POST 피드백 전송 처리
+     */
+    private APIGatewayProxyResponseEvent handlePostFeedback(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            // 요청 본문 파싱
+            Map<String, Object> requestBody = gson.fromJson(input.getBody(), Map.class);
+            
+            // 피드백 처리
+            Map<String, Object> result = processFeedback(requestBody, context);
+            
+            return createResponse(200, gson.toJson(result));
+
+        } catch (JsonSyntaxException e) {
+            context.getLogger().log("❌ Invalid JSON: " + e.getMessage());
+            return createResponse(400, createErrorResponse("Invalid JSON format"));
+        } catch (IllegalArgumentException e) {
+            context.getLogger().log("❌ Validation error: " + e.getMessage());
+            return createResponse(400, createErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("❌ Processing error: " + e.getMessage());
+            return createResponse(500, createErrorResponse("Failed to process feedback"));
+        }
+    }
+
+    /**
+     * GET 피드백 조회 처리
+     */
+    private APIGatewayProxyResponseEvent handleGetFeedback(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            Map<String, String> queryParams = input.getQueryStringParameters();
+            if (queryParams == null) {
+                return createResponse(400, createErrorResponse("Query parameters required"));
+            }
+
+            String studentEmail = queryParams.get("student_email");
+            if (studentEmail == null || studentEmail.isEmpty()) {
+                return createResponse(400, createErrorResponse("student_email parameter is required"));
+            }
+
+            int limit = 50;
+            if (queryParams.containsKey("limit")) {
+                try {
+                    limit = Integer.parseInt(queryParams.get("limit"));
+                } catch (NumberFormatException e) {
+                    return createResponse(400, createErrorResponse("Invalid limit parameter"));
+                }
+            }
+
+            Map<String, Object> result = getFeedbackHistory(studentEmail, limit, context);
+            return createResponse(200, gson.toJson(result));
+
+        } catch (Exception e) {
+            context.getLogger().log("❌ Query error: " + e.getMessage());
+            return createResponse(500, createErrorResponse("Failed to retrieve feedback"));
+        }
+    }
+
+    /**
+     * 피드백 메시지 처리
+     */
+    private Map<String, Object> processFeedback(Map<String, Object> requestBody, Context context) {
         try {
             // 1. 요청 검증
             validateRequest(requestBody);
@@ -224,6 +312,42 @@ public class TutorFeedbackHandler {
     }
 
     /**
+     * 피드백 히스토리 조회
+     */
+    private Map<String, Object> getFeedbackHistory(String studentEmail, int limit, Context context) {
+        try {
+            Map<String, AttributeValue> keyCondition = new HashMap<>();
+            keyCondition.put(":email", AttributeValue.builder().s(studentEmail).build());
+
+            QueryRequest request = QueryRequest.builder()
+                    .tableName(FEEDBACK_TABLE)
+                    .indexName("student_email-timestamp-index")
+                    .keyConditionExpression("student_email = :email")
+                    .expressionAttributeValues(keyCondition)
+                    .limit(limit)
+                    .scanIndexForward(false)  // 최신 순 정렬
+                    .build();
+
+            QueryResponse response = dynamoDbClient.query(request);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("messages", response.items());
+            result.put("count", response.count());
+            
+            if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
+                result.put("lastEvaluatedKey", response.lastEvaluatedKey());
+            }
+
+            context.getLogger().log("✅ Retrieved " + response.count() + " messages for: " + studentEmail);
+            return result;
+
+        } catch (Exception e) {
+            context.getLogger().log("❌ Query error: " + e.getMessage());
+            throw new RuntimeException("Failed to retrieve feedback history", e);
+        }
+    }
+
+    /**
      * WebSocketConnectionsTable에서 학생의 connection_id 조회
      */
     private String getStudentConnectionId(String studentEmail, Context context) {
@@ -232,7 +356,7 @@ public class TutorFeedbackHandler {
             keyCondition.put(":email", AttributeValue.builder().s(studentEmail).build());
 
             QueryRequest request = QueryRequest.builder()
-                    .tableName(WEBSOCKET_TABLE)
+                    .tableName(CONNECTIONS_TABLE)
                     .indexName("user_email-index")
                     .keyConditionExpression("user_email = :email")
                     .expressionAttributeValues(keyCondition)
@@ -267,5 +391,31 @@ public class TutorFeedbackHandler {
      */
     private String generateMessageId(String tutorEmail, String studentEmail, String sessionId, String timestamp) {
         return String.format("%s#%s#%s#%s", tutorEmail, studentEmail, sessionId, timestamp);
+    }
+
+    /**
+     * HTTP 응답 생성
+     */
+    private APIGatewayProxyResponseEvent createResponse(int statusCode, String body) {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Content-Type", "application/json");
+        headers.put("Access-Control-Allow-Origin", "*");
+        headers.put("Access-Control-Allow-Headers", "Content-Type,Authorization");
+        headers.put("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+
+        return new APIGatewayProxyResponseEvent()
+                .withStatusCode(statusCode)
+                .withHeaders(headers)
+                .withBody(body);
+    }
+
+    /**
+     * 에러 응답 생성
+     */
+    private String createErrorResponse(String message) {
+        Map<String, Object> error = new HashMap<>();
+        error.put("success", false);
+        error.put("error", message);
+        return gson.toJson(error);
     }
 }
