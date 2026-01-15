@@ -28,8 +28,8 @@ Resources:
   UserPool:
     Type: AWS::Cognito::UserPool
     # 스택 삭제/업데이트 시에도 사용자 데이터 보호
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+#    DeletionPolicy: Retain
+#    UpdateReplacePolicy: Retain
     Properties:
       # 동적 네이밍: 여러 환경(dev, staging, prod) 배포 시 충돌 방지
       UserPoolName: !Sub "${AWS::StackName}-userpool"
@@ -641,7 +641,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: SentencesWebSocketFunction
-      Handler: websocket.App::handleRequest
+      Handler:  websocket.SocketHandler::handleRequest
       Role: !GetAtt WebSocketLambdaRole.Arn
       Policies:
         - Statement:
@@ -722,6 +722,16 @@ Resources:
       ApiId: !Ref WebSocketApi
       RouteKey: $disconnect
       Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  # status
+  # student 상태 5초 간격으로 전달 action/inaction/idle
+  StatusRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: status
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
 
   # $default Route
   DefaultRoute:

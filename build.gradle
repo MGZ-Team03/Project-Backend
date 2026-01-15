@@ -24,6 +24,16 @@ subprojects {
 
         implementation 'com.amazonaws:aws-lambda-java-core:1.2.3'
         implementation 'com.amazonaws:aws-lambda-java-events:3.11.0'
+
+        // WebSocket 지원
+        implementation 'software.amazon.awssdk:apigatewaymanagementapi:2.20.0'
+
+        //  Lombok
+        compileOnly 'org.projectlombok:lombok:1.18.30'
+        annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+        testCompileOnly 'org.projectlombok:lombok:1.18.30'
+        testAnnotationProcessor 'org.projectlombok:lombok:1.18.30'
     }
 
 }
