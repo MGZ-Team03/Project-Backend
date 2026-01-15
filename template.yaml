@@ -113,6 +113,15 @@ Resources:
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
                   - !Sub '${SentencesTable.Arn}/index/*'
+        - PolicyName: WebSocketManageConnections
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'execute-api:ManageConnections'
+                Resource:
+                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
 
   # WebSocket 전용 Role
   WebSocketLambdaRole:
@@ -393,11 +402,12 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: TutorFunction
-      Handler: com.speacktracker.tutor.TutorFeedbackHandler::handleRequest
+      Handler: com.speaktracker.tutor.TutorFeedbackHandler::handleRequest
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Environment:
         Variables:
-          WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WebSocketApiStage}'
+          # TODO: Dev -> {WebSocketApiStage} 로 변경
+          WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
       Events:
         API1:
           Type: Api
@@ -467,6 +477,24 @@ Resources:
             Method: get
     Metadata:
       SamResourceId: SessionFunction
+
+  StudentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Student API - Get tutor information
+      CodeUri: StudentFunction
+      Handler: com.speaktracker.student.StudentHandler::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/student/tutor
+            Method: get
+    Metadata:
+      SamResourceId: StudentFunction
 
   SentencesFunction:
     Type: AWS::Serverless::Function

@@ -95,9 +95,14 @@ public class App implements RequestHandler<APIGatewayV2WebSocketEvent, APIGatewa
 
     /**
      * DynamoDB에 연결 정보 저장
+     * 같은 user_email의 이전 연결들을 먼저 삭제하여 중복 방지
      */
     private void saveConnection(String connectionId, String userEmail, String tutorEmail, Context context) {
         try {
+            // 1. 같은 user_email의 기존 연결들 삭제
+            deleteOldConnections(userEmail, context);
+            
+            // 2. 새 연결 저장
             Map<String, AttributeValue> item = new HashMap<>();
             item.put("connection_id", AttributeValue.builder().s(connectionId).build());
             item.put("user_email", AttributeValue.builder().s(userEmail).build());
@@ -122,6 +127,41 @@ public class App implements RequestHandler<APIGatewayV2WebSocketEvent, APIGatewa
 
         } catch (Exception e) {
             context.getLogger().log("❌ Failed to save connection: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 같은 user_email의 기존 연결들을 삭제
+     */
+    private void deleteOldConnections(String userEmail, Context context) {
+        try {
+            // user_email-index로 기존 연결 조회
+            QueryRequest queryRequest = QueryRequest.builder()
+                    .tableName(CONNECTIONS_TABLE)
+                    .indexName("user_email-index")
+                    .keyConditionExpression("user_email = :email")
+                    .expressionAttributeValues(Map.of(
+                            ":email", AttributeValue.builder().s(userEmail).build()
+                    ))
+                    .build();
+
+            QueryResponse queryResponse = dynamoDbClient.query(queryRequest);
+            
+            // 기존 연결들 삭제
+            for (Map<String, AttributeValue> item : queryResponse.items()) {
+                String oldConnectionId = item.get("connection_id").s();
+                
+                DeleteItemRequest deleteRequest = DeleteItemRequest.builder()
+                        .tableName(CONNECTIONS_TABLE)
+                        .key(Map.of("connection_id", AttributeValue.builder().s(oldConnectionId).build()))
+                        .build();
+                
+                dynamoDbClient.deleteItem(deleteRequest);
+                context.getLogger().log("🗑️ Deleted old connection: " + oldConnectionId);
+            }
+            
+        } catch (Exception e) {
+            context.getLogger().log("⚠️ Failed to delete old connections: " + e.getMessage());
         }
     }
 
