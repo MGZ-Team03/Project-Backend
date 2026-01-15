@@ -5,9 +5,13 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketResponse;
 import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import lombok.RequiredArgsConstructor;
-import websocket.dto.TutorStudentDto;
+import websocket.dto.StatusRequest;
+import websocket.dto.WebSocketRequest;
 import websocket.service.SocketService;
+
+import java.lang.reflect.Type;
 
 @RequiredArgsConstructor
 public class SocketController implements RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
@@ -27,10 +31,14 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
                     return handleConnect(event, context);
 
                 case "$disconnect":
-                    return handleDisconnect(event, context);
+                    return socketService.handleDisconnect(event);
 
-                case "$status":
-                    return handleStatus(event, context);
+                case "status":
+                    Type type = new TypeToken<WebSocketRequest<StatusRequest>>(){}.getType();
+                    WebSocketRequest<StatusRequest> request =
+                            gson.fromJson(event.getBody(), type);
+
+                    return socketService.handleStatus(event, request);
 
                 case "$default":
                 default:
@@ -42,6 +50,8 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
         }
     }
 
+    // 로그인 후 start inactive
+    // 방 (ai, 문장) 입장 시 active -> 5초에 한번 씩 상태 전달
     private APIGatewayV2WebSocketResponse handleConnect(APIGatewayV2WebSocketEvent event, Context context) {
         String connectionId = event.getRequestContext().getConnectionId();
         context.getLogger().log("Client connected: " + connectionId);
@@ -49,39 +59,15 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
         return createResponse(200, "Connected");
     }
 
-    private APIGatewayV2WebSocketResponse handleDisconnect(APIGatewayV2WebSocketEvent event, Context context) {
-        String connectionId = event.getRequestContext().getConnectionId();
-        context.getLogger().log("Client disconnected: " + connectionId);
+//    private APIGatewayV2WebSocketResponse handleDisconnect(APIGatewayV2WebSocketEvent event, Context context) {
+//        String connectionId = event.getRequestContext().getConnectionId();
+//        context.getLogger().log("Client disconnected: " + connectionId);
+//
+//        return createResponse(200, "Disconnected");
+//    }
 
-        return createResponse(200, "Disconnected");
-    }
 
-    private APIGatewayV2WebSocketResponse handleStatus(APIGatewayV2WebSocketEvent event, Context context) {
-        String body = event.getBody();
-
-        if (body == null || body.isEmpty()) {
-            return createResponse(400, "Request body is required");
-        }
-
-        try {
-            TutorStudentDto tutorStudentDto = gson.fromJson(body, TutorStudentDto.class);
-
-            // 유효성 검사
-            if (tutorStudentDto.getTutorEmail() == null || tutorStudentDto.getStudentEmail() == null) {
-                return createResponse(400, "tutorEmail and studentEmail are required");
-            }
-
-            socketService.save(tutorStudentDto);
-
-            return createResponse(200, "Tutor-Student assignment saved successfully");
-
-        } catch (Exception e) {
-            context.getLogger().log("Failed to parse or save data: " + e.getMessage());
-            return createResponse(400, "Invalid request format");
-        }
-    }
-
-    private APIGatewayV2WebSocketResponse createResponse(int statusCode, String message) {
+    public static APIGatewayV2WebSocketResponse createResponse(int statusCode, String message) {
         APIGatewayV2WebSocketResponse response = new APIGatewayV2WebSocketResponse();
         response.setStatusCode(statusCode);
         response.setBody(message);

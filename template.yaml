@@ -729,7 +729,7 @@ Resources:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref WebSocketApi
-      RouteKey: $status
+      RouteKey: status
       Target: !Sub 'integrations/${WebSocketIntegration}'
 
 
