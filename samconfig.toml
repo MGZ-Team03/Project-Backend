@@ -31,3 +31,14 @@ warm_containers = "EAGER"
 
 [default.local_start_lambda.parameters]
 warm_containers = "EAGER"
+
+[personal.deploy.parameters]
+stack_name = "Project02-SpeakTracker-acw-personal"
+resolve_s3 = true
+s3_prefix = "Project02-SpeakTracker-acw-personal"
+region = "ap-northeast-2"
+capabilities = "CAPABILITY_IAM"
+image_repositories = []
+
+[personal.global.parameters]
+region = "ap-northeast-2"

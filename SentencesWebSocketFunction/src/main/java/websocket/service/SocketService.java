@@ -22,35 +22,43 @@ public class SocketService {
     private final SocketRepository socketRepository;
     private final Gson gson = new Gson();
 
+    public APIGatewayV2WebSocketResponse handleConnect(APIGatewayV2WebSocketEvent event) {
+        getLogger().log("------------connect handler-------------");
+
+        String connectionId = event.getRequestContext().getConnectionId();
+        EmailRequest request = gson.fromJson(event.getBody(), EmailRequest.class);
+        getLogger().log("handleConnect.reqeust: " + request);
+        socketRepository.saveConnection(event,request.getTutorEmail(), request.getStudentEmail());
+
+        return createResponse(200, "ok");
+    }
+
     /**
      * Disconnect 시 호출: status를 "inactive"로 업데이트
      */
-    public APIGatewayV2WebSocketResponse handleDisconnect(APIGatewayV2WebSocketEvent event){
-        EmailRequest request = gson.fromJson(event.getBody(), EmailRequest.class);
-        getLogger().log("=== Service: Handle Disconnect ===");
-        boolean exists = socketRepository.existsTutorStudent(request.getTutorEmail(), request.getStudentEmail());
-        if (exists) {
-            getLogger().log("📌 Updating status to 'inactive'");
-            socketRepository.updateStatus(request.getTutorEmail(), request.getStudentEmail(), "inactive");
-        } else {
-            getLogger().log("⚠️ Tutor-Student not found, skipping disconnect");
-        }
+    public APIGatewayV2WebSocketResponse handleDisconnect(String connectionId) {
+        getLogger().log("=== Service: Handle Disconnect === ConnectionID: " + connectionId);
 
-        return createResponse(400,"disconnected");
+
+        boolean success = socketRepository.handleDisConnect(connectionId);
+
+        if (success) {
+            getLogger().log("handleDisconnect.reqeust: disconnected.success");
+            return createResponse(200, "disconnected");
+        } else {
+            getLogger().log("student not found.handledisconnect");
+            return createResponse(404, "student not found");
+        }
     }
     /**
      * status 업데이트
      */
-    public void updateStatus(TutorStudentDto tutorStudentDto) {
-        socketRepository.updateStatus(
-                tutorStudentDto.getTutorEmail(),
-                tutorStudentDto.getStudentEmail(),
-                tutorStudentDto.getStatus());
-    }
+
 
     public APIGatewayV2WebSocketResponse handleStatus(APIGatewayV2WebSocketEvent event, WebSocketRequest<StatusRequest> req) {
         String body = event.getBody();
         getLogger().log("=== Service: Handle Status ===");
+        String connectionId = event.getRequestContext().getConnectionId();
 
         StatusRequest request = req.getData();
         getLogger().log("Request: " + request);
@@ -63,15 +71,23 @@ public class SocketService {
         getLogger().log("Current DB Status: " + currentStatus);
         getLogger().log("Requested Status: " + request.getStatus());
 
+        boolean exists = socketRepository.existsByConnectionId(connectionId);
+
+        if (!exists) {
+            socketRepository.saveConnection(event,request.getTutorEmail(), request.getStudentEmail());
+        }
+
         // 아이템이 존재하지 않는 경우 - 새로 생성
         if (currentStatus == null) {
             getLogger().log("✨ Creating new tutor-student relationship");
-            socketRepository.saveTutorStudent(request);
+            socketRepository.saveTutorStudent(request,event);
             getLogger().log("Status created: " + request.getStatus());
         }
         // 아이템은 존재하지만 상태가 다른 경우 - 업데이트
         else if (!request.getStatus().equals(currentStatus)) {
             socketRepository.updateStatus(
+                    connectionId,
+                    request.getRoom(),
                     request.getTutorEmail(),
                     request.getStudentEmail(),
                     request.getStatus()

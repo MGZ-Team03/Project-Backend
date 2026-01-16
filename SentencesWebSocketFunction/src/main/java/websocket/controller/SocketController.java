@@ -9,6 +9,7 @@ import com.google.gson.reflect.TypeToken;
 import lombok.RequiredArgsConstructor;
 import websocket.dto.StatusRequest;
 import websocket.dto.WebSocketRequest;
+import websocket.repository.SocketRepository;
 import websocket.service.SocketService;
 
 import java.lang.reflect.Type;
@@ -23,15 +24,17 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
     public APIGatewayV2WebSocketResponse handleRequest(APIGatewayV2WebSocketEvent event, Context context) {
 
         String routeKey = event.getRequestContext().getRouteKey();
-        context.getLogger().log("Route: " + routeKey);
+        context.getLogger().log("Route!: " + routeKey);
+
 
         try {
             switch (routeKey) {
                 case "$connect":
-                    return handleConnect(event, context);
+                    return handleConnect(event,context);
 
                 case "$disconnect":
-                    return socketService.handleDisconnect(event);
+                    String connectionId = event.getRequestContext().getConnectionId();
+                    return socketService.handleDisconnect(connectionId);
 
                 case "status":
                     Type type = new TypeToken<WebSocketRequest<StatusRequest>>(){}.getType();
@@ -42,7 +45,7 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
 
                 case "$default":
                 default:
-                    return createResponse(400, "Unsupported route: " + routeKey);
+                    return createResponse(400, "Unsupported route!: " + routeKey);
             }
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
@@ -50,21 +53,12 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
         }
     }
 
-    // 로그인 후 start inactive
-    // 방 (ai, 문장) 입장 시 active -> 5초에 한번 씩 상태 전달
     private APIGatewayV2WebSocketResponse handleConnect(APIGatewayV2WebSocketEvent event, Context context) {
         String connectionId = event.getRequestContext().getConnectionId();
         context.getLogger().log("Client connected: " + connectionId);
 
-        return createResponse(200, "Connected");
+        return createResponse(200, "Connected!!!");
     }
-
-//    private APIGatewayV2WebSocketResponse handleDisconnect(APIGatewayV2WebSocketEvent event, Context context) {
-//        String connectionId = event.getRequestContext().getConnectionId();
-//        context.getLogger().log("Client disconnected: " + connectionId);
-//
-//        return createResponse(200, "Disconnected");
-//    }
 
 
     public static APIGatewayV2WebSocketResponse createResponse(int statusCode, String message) {

@@ -28,8 +28,8 @@ Resources:
   UserPool:
     Type: AWS::Cognito::UserPool
     # 스택 삭제/업데이트 시에도 사용자 데이터 보호
-#    DeletionPolicy: Retain
-#    UpdateReplacePolicy: Retain
+    #    DeletionPolicy: Retain
+    #    UpdateReplacePolicy: Retain
     Properties:
       # 동적 네이밍: 여러 환경(dev, staging, prod) 배포 시 충돌 방지
       UserPoolName: !Sub "${AWS::StackName}-userpool"
@@ -576,27 +576,27 @@ Resources:
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
       Policies:
         - Statement:
-          - Effect: Allow
-            Action:
-              - cognito-idp:AdminInitiateAuth
-              - cognito-idp:AdminCreateUser
-              - cognito-idp:AdminSetUserPassword
-              - cognito-idp:SignUp
-              - cognito-idp:InitiateAuth
-              - cognito-idp:GetUser
-              - cognito-idp:AdminGetUser
-              - cognito-idp:ConfirmSignUp
-            Resource: !GetAtt UserPool.Arn
-          - Effect: Allow
-            Action:
-              - dynamodb:PutItem
-              - dynamodb:GetItem
-              - dynamodb:Query
-              - dynamodb:UpdateItem
-            Resource:
-              - !GetAtt UsersTable.Arn
-              - !GetAtt TutorStudentsTable.Arn
-              - !Sub "${TutorStudentsTable.Arn}/index/*"
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminInitiateAuth
+                - cognito-idp:AdminCreateUser
+                - cognito-idp:AdminSetUserPassword
+                - cognito-idp:SignUp
+                - cognito-idp:InitiateAuth
+                - cognito-idp:GetUser
+                - cognito-idp:AdminGetUser
+                - cognito-idp:ConfirmSignUp
+              Resource: !GetAtt UserPool.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Resource:
+                - !GetAtt UsersTable.Arn
+                - !GetAtt TutorStudentsTable.Arn
+                - !Sub "${TutorStudentsTable.Arn}/index/*"
       Events:
         API1:
           Type: Api
