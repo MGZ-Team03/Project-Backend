@@ -14,7 +14,7 @@ import java.util.Map;
 public class ClaudeApiService {
 
     private static final String CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
-    private static final String CLAUDE_MODEL = "claude-sonnet-4-20250514";
+    private static final String CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient client;

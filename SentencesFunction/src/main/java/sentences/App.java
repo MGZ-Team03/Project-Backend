@@ -358,9 +358,10 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             ## Topic Context: %s
 
             ## Difficulty Guidelines
+            - general : Random seed is current time.
             - easy: 5-10 words, present tense, basic vocabulary, simple sentence structure
-            - medium: 10-20 words, various tenses, compound sentences, common idioms
-            - hard: 15-30 words, complex grammar, subjunctive mood, nuanced expressions, formal/polite registers
+            - medium: 10-15 words, various tenses, compound sentences, common idioms
+            - hard: 15-25 words, complex grammar, subjunctive mood, nuanced expressions, formal/polite registers
 
             ## Critical Rules
             1. NO generic greetings (Hello, Hi, How are you, Thank you, Nice to meet you)

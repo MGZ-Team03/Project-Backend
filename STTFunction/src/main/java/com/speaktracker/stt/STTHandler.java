@@ -9,10 +9,14 @@ import com.speaktracker.stt.model.*;
 import com.speaktracker.stt.service.PronunciationEvaluationService;
 import com.speaktracker.stt.service.PronunciationResultRepository;
 import com.speaktracker.stt.service.STSCredentialsService;
+import com.speaktracker.stt.service.TranscribeService;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.sts.StsClient;
+import software.amazon.awssdk.services.transcribe.TranscribeClient;
 
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,6 +26,7 @@ public class STTHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
     private final STSCredentialsService stsCredentialsService;
     private final PronunciationEvaluationService evaluationService;
     private final PronunciationResultRepository repository;
+    private final TranscribeService transcribeService;
 
     public STTHandler() {
         // AWS 클라이언트 초기화
@@ -33,9 +38,18 @@ public class STTHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                 .region(Region.AP_NORTHEAST_2)
                 .build();
 
+        S3Client s3Client = S3Client.builder()
+                .region(Region.AP_NORTHEAST_2)
+                .build();
+
+        TranscribeClient transcribeClient = TranscribeClient.builder()
+                .region(Region.AP_NORTHEAST_2)
+                .build();
+
         // 환경 변수
         String transcribeClientRoleArn = System.getenv("TRANSCRIBE_CLIENT_ROLE_ARN");
         String pronunciationResultsTable = System.getenv("PRONUNCIATION_RESULTS_TABLE");
+        String s3BucketName = System.getenv("TRANSCRIBE_BUCKET_NAME");
         int credentialExpiration = Integer.parseInt(
                 System.getenv().getOrDefault("CREDENTIAL_EXPIRATION_SECONDS", "900")
         );
@@ -45,6 +59,7 @@ public class STTHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
                 stsClient, transcribeClientRoleArn, credentialExpiration);
         this.evaluationService = new PronunciationEvaluationService();
         this.repository = new PronunciationResultRepository(dynamoDbClient, pronunciationResultsTable);
+        this.transcribeService = new TranscribeService(transcribeClient, s3Client, s3BucketName);
     }
 
     @Override
@@ -60,6 +75,11 @@ public class STTHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             // POST /api/stt/credentials - 임시 자격 증명 발급
             if ("POST".equals(httpMethod) && path.endsWith("/credentials")) {
                 return handleCredentialsRequest(input, context);
+            }
+
+            // POST /api/stt/transcribe - 오디오 파일 변환
+            if ("POST".equals(httpMethod) && path.endsWith("/transcribe")) {
+                return handleTranscribeRequest(input, context);
             }
 
             // POST /api/stt/evaluate - 발음 평가
@@ -78,6 +98,70 @@ public class STTHandler implements RequestHandler<APIGatewayProxyRequestEvent, A
             context.getLogger().log("STT Error: " + e.getMessage());
             e.printStackTrace();
             return createResponse(500, Map.of("error", "Internal server error: " + e.getMessage()));
+        }
+    }
+
+    private APIGatewayProxyResponseEvent handleTranscribeRequest(
+            APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            context.getLogger().log("Transcribe request received");
+
+            // Body에서 오디오 데이터 추출 (Base64 인코딩된 데이터)
+            String body = input.getBody();
+            if (body == null || body.isEmpty()) {
+                return createResponse(400, TranscribeResponse.error("Missing request body"));
+            }
+
+            // isBase64Encoded 확인
+            boolean isBase64Encoded = input.getIsBase64Encoded() != null && input.getIsBase64Encoded();
+
+            // Base64 디코딩
+            byte[] audioData;
+            if (isBase64Encoded) {
+                audioData = Base64.getDecoder().decode(body);
+            } else {
+                // Body가 JSON 형태일 수 있음 (languageCode 포함)
+                try {
+                    // JSON 파싱 시도
+                    Map<String, Object> requestBody = objectMapper.readValue(body, Map.class);
+                    String audioBase64 = (String) requestBody.get("audio");
+                    String languageCode = (String) requestBody.getOrDefault("languageCode", "en-US");
+
+                    if (audioBase64 == null || audioBase64.isEmpty()) {
+                        return createResponse(400, TranscribeResponse.error("Missing audio data"));
+                    }
+
+                    audioData = Base64.getDecoder().decode(audioBase64);
+
+                    // Transcribe 호출
+                    context.getLogger().log("Starting transcription - Language: " + languageCode);
+                    String transcript = transcribeService.transcribeAudio(audioData, languageCode);
+
+                    context.getLogger().log("Transcription completed: " + transcript);
+                    return createResponse(200, TranscribeResponse.success(transcript));
+
+                } catch (Exception e) {
+                    // JSON이 아니면 그냥 Base64 디코딩 시도
+                    audioData = Base64.getDecoder().decode(body);
+                }
+            }
+
+            // 기본 언어 코드로 Transcribe
+            String languageCode = "en-US";
+            context.getLogger().log("Starting transcription - Language: " + languageCode);
+            String transcript = transcribeService.transcribeAudio(audioData, languageCode);
+
+            context.getLogger().log("Transcription completed: " + transcript);
+            return createResponse(200, TranscribeResponse.success(transcript));
+
+        } catch (IllegalArgumentException e) {
+            context.getLogger().log("Invalid request: " + e.getMessage());
+            return createResponse(400, TranscribeResponse.error("Invalid request: " + e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("Transcription error: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(500, TranscribeResponse.error(
+                    "Transcription failed: " + e.getMessage()));
         }
     }
 

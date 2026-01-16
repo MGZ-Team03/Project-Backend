@@ -117,6 +117,15 @@ Resources:
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
                   - !Sub '${SentencesTable.Arn}/index/*'
+        - PolicyName: SecretsManagerReadClaudeKey
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:team3/claude_api_key*'
 
   # WebSocket 전용 Role
   WebSocketLambdaRole:
@@ -284,11 +293,20 @@ Resources:
           AttributeType: S
         - AttributeName: timestamp
           AttributeType: S
+        - AttributeName: conversation_id
+          AttributeType: S
       KeySchema:
         - AttributeName: student_email
           KeyType: HASH
         - AttributeName: timestamp
           KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: conversation_id-index
+          KeySchema:
+            - AttributeName: conversation_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
       TimeToLiveSpecification:
         AttributeName: ttl
         Enabled: true
@@ -392,6 +410,203 @@ Resources:
         - Key: Name
           Value: Sentences Table
 
+  # 9. Pronunciation Results 테이블
+  PronunciationResultsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AWS::StackName}-pronunciation-results'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: student_email
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: student_email
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: Pronunciation Results Table
+
+  # Transcribe Temporary Audio S3 Bucket
+  TranscribeTempBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-transcribe-temp'
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldAudioFiles
+            Status: Enabled
+            ExpirationInDays: 1
+      Tags:
+        - Key: Name
+          Value: Transcribe Temporary Audio Bucket
+
+  # TTS Audio S3 Bucket
+  TTSBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldAudioFiles
+            Status: Enabled
+            ExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: TTS Audio Bucket
+
+  # TTS Lambda Role
+  TTSLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: PollyAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - polly:SynthesizeSpeech
+                Resource: '*'
+        - PolicyName: S3TTSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:HeadObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${TTSBucket}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt TTSBucket.Arn
+
+  # STT (Speech-to-Text) IAM Roles
+  STTLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: STSAssumeTranscribeRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource:
+                  - !GetAtt TranscribeClientRole.Arn
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt PronunciationResultsTable.Arn
+        - PolicyName: S3TranscribeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${TranscribeTempBucket}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt TranscribeTempBucket.Arn
+        - PolicyName: TranscribeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - transcribe:StartTranscriptionJob
+                  - transcribe:GetTranscriptionJob
+                  - transcribe:DeleteTranscriptionJob
+                Resource: '*'
+
+  TranscribeClientRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-transcribe-client-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TranscribeStreamingAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - transcribe:StartStreamTranscription
+                Resource: '*'
+
   HelloWorldFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -484,6 +699,9 @@ Resources:
       CodeUri: SentencesFunction
       Handler: sentences.App::handleRequest
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Environment:
+        Variables:
+          CLAUDE_API_KEY_SECRET_ID: team3/claude_api_key
       Events:
         API1:
           Type: Api
@@ -499,6 +717,31 @@ Resources:
               Ref: MyApi
             Path: /api/sentences/{id}/audio
             Method: get
+        GenerateSentences:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/sentences/generate
+            Method: post
+        ChatStart:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/ai/chat/start
+            Method: post
+            Auth:
+              Authorizer: CognitoAuthorizer
+        ChatMessage:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/ai/chat/message
+            Method: post
+            Auth:
+              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: SentencesFunction
   TutorRegisterFunction:
@@ -538,6 +781,57 @@ Resources:
             Method: post
     Metadata:
       SamResourceId: TutorRegisterFunction
+
+  TTSFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: TTSFunction
+      Handler: com.speaktracker.tts.TTSHandler::handleRequest
+      Role: !GetAtt TTSLambdaRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          TTS_BUCKET: !Ref TTSBucket
+          PRESIGNED_URL_EXPIRATION: '3600'
+      Events:
+        TTSConvert:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tts
+            Method: post
+    Metadata:
+      SamResourceId: TTSFunction
+
+  # STT Function
+  STTFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: STTFunction
+      Handler: com.speaktracker.stt.STTHandler::handleRequest
+      Role: !GetAtt STTLambdaRole.Arn
+      Timeout: 90
+      MemorySize: 512
+      Environment:
+        Variables:
+          TRANSCRIBE_CLIENT_ROLE_ARN: !GetAtt TranscribeClientRole.Arn
+          PRONUNCIATION_RESULTS_TABLE: !Ref PronunciationResultsTable
+          TRANSCRIBE_BUCKET_NAME: !Ref TranscribeTempBucket
+          CREDENTIAL_EXPIRATION_SECONDS: '900'
+      Events:
+        Evaluate:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/stt/evaluate
+            Method: post
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: STTFunction
 
   StatisticsFunction:
     Type: AWS::Serverless::Function
@@ -662,7 +956,7 @@ Resources:
       Cors:
         AllowOrigin: "'*'"
         AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Language-Code,X-Mime-Type'"
         MaxAge: "'3600'"
       # 4XX, 5XX 에러 응답에도 CORS 헤더 추가 (인증 실패 시 CORS 에러 방지)
       GatewayResponses:
