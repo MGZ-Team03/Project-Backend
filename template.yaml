@@ -22,8 +22,21 @@ Globals:
         FEEDBACK_TABLE: !Ref FeedbackMessagesTable
         CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
         SENTENCES_TABLE: !Ref SentencesTable
+        WS_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
 
 Resources:
+
+  DashboardQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-dashboard-queue'
+      VisibilityTimeout: 90  # Lambda timeout보다 3배 길게
+      MessageRetentionPeriod: 345600  # 4일
+      ReceiveMessageWaitTimeSeconds: 0
+      Tags:
+        - Key: Name
+          Value: Dashboard Queue
+
   # Cognito User Pool for authentication
   UserPool:
     Type: AWS::Cognito::UserPool
@@ -117,6 +130,17 @@ Resources:
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
                   - !Sub '${SentencesTable.Arn}/index/*'
+        - PolicyName: SQSAccess # sqs 권한추가
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt DashboardQueue.Arn
 
   # WebSocket 전용 Role
   WebSocketLambdaRole:
@@ -391,6 +415,57 @@ Resources:
       Tags:
         - Key: Name
           Value: Sentences Table
+
+
+  # ========================================
+  # 대시보드 SQS 핸들러 Lambda
+  # ========================================
+  DashboardSQSFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: SentencesWebSocketFunction
+      Handler: websocket.handler.DashboardSQSHandler::handleRequest
+      Role: !GetAtt WebSocketLambdaRole.Arn
+      Environment:
+        Variables:
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          WS_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt DashboardQueue.Arn
+            BatchSize: 10
+            Enabled: true
+    Metadata:
+      SamResourceId: DashboardSQSFunction
+
+  # ========================================
+  # 대시보드 데이터 생성기 Lambda
+  # ========================================
+  DashboardDataGeneratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: SentencesWebSocketFunction
+      Handler: websocket.handler.DataGeneratorHandler::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref DashboardQueue
+          SESSIONS_TABLE: !Ref LearningSessionsTable
+          STATISTICS_TABLE: !Ref DailyStatisticsTable
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+      Events:
+        ScheduleEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Enabled: true
+    Metadata:
+      SamResourceId: DashboardDataGeneratorFunction
+
 
   HelloWorldFunction:
     Type: AWS::Serverless::Function
@@ -854,3 +929,15 @@ Outputs:
     Value: !Ref SentencesTable
     Export:
       Name: !Sub '${AWS::StackName}-SentencesTable'
+
+  DashboardQueueUrl:
+    Description: Dashboard SQS Queue URL
+    Value: !Ref DashboardQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-DashboardQueueUrl'
+
+  DashboardQueueArn:
+    Description: Dashboard SQS Queue ARN
+    Value: !GetAtt DashboardQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DashboardQueueArn'
