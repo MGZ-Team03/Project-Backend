@@ -127,7 +127,6 @@ public class DashBoardController {
             context.getLogger().log("에러 타입: " + e.getClass().getName());
             context.getLogger().log("에러 메시지: " + e.getMessage());
             context.getLogger().log("\n스택 트레이스:");
-            e.printStackTrace();
             throw new RuntimeException("WebSocket 브로드캐스트 실패", e);
         }
 
