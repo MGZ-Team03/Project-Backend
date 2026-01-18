@@ -9,18 +9,18 @@ import websocket.dto.StatusRequest;
 import websocket.dto.TutorStudentDto;
 import websocket.dto.WebSocketRequest;
 import websocket.repository.SocketRepository;
+
+import java.util.Map;
+
 import static com.amazonaws.services.lambda.runtime.LambdaRuntime.getLogger;
 import static websocket.controller.SocketController.createResponse;
 
-/**
- * Connect 시 호출: 존재 여부 확인 후 분기 처리
- * - 존재하면: status를 "idle"로 업데이트
- * - 존재하지 않으면: 새로 등록
- */
+
 @RequiredArgsConstructor
 public class SocketService {
     private final SocketRepository socketRepository;
     private final Gson gson = new Gson();
+
 
     public APIGatewayV2WebSocketResponse handleConnect(APIGatewayV2WebSocketEvent event) {
         getLogger().log("------------connect handler-------------");
@@ -63,11 +63,14 @@ public class SocketService {
         StatusRequest request = req.getData();
         getLogger().log("Request: " + request);
 
-        String currentStatus = socketRepository.getStatus(
+        Map<String,String> currentStatusAndRoom = socketRepository.getStatusAndRoom(
                 request.getTutorEmail(),
                 request.getStudentEmail()
         );
+        String currentStatus =currentStatusAndRoom != null ? currentStatusAndRoom.get("status") : null;
+        String currentRoom = currentStatusAndRoom != null ? currentStatusAndRoom.get("room") : null;
 
+        getLogger().log("currentRoom: " + currentRoom);
         getLogger().log("Current DB Status: " + currentStatus);
         getLogger().log("Requested Status: " + request.getStatus());
 
@@ -78,13 +81,12 @@ public class SocketService {
         }
 
         // 아이템이 존재하지 않는 경우 - 새로 생성
-        if (currentStatus == null) {
+        if (currentStatusAndRoom == null) {
             getLogger().log("✨ Creating new tutor-student relationship");
             socketRepository.saveTutorStudent(request,event);
             getLogger().log("Status created: " + request.getStatus());
-        }
-        // 아이템은 존재하지만 상태가 다른 경우 - 업데이트
-        else if (!request.getStatus().equals(currentStatus)) {
+        } else if ( !request.getRoom().equals(currentRoom) || !request.getStatus().equals(currentStatus)) {
+            getLogger().log("updateStatus");
             socketRepository.updateStatus(
                     connectionId,
                     request.getRoom(),

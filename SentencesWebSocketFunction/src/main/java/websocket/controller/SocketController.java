@@ -33,6 +33,7 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
                     return handleConnect(event,context);
 
                 case "$disconnect":
+                    context.getLogger().log("Disconnect!");
                     String connectionId = event.getRequestContext().getConnectionId();
                     return socketService.handleDisconnect(connectionId);
 

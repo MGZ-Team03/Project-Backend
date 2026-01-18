@@ -21,7 +21,7 @@ public class SocketRepository {
     private final DynamoDbClient dynamoDbClient;
 
     private final String tutorStudentsTableName;
-    String  connectionTable = System.getenv("CONNECTIONS_TABLE");
+    String connectionTable = System.getenv("CONNECTIONS_TABLE");
 
     public void saveTutorStudent(StatusRequest request, APIGatewayV2WebSocketEvent event) {
         getLogger().log("=== Repository 실행 ===");
@@ -130,9 +130,9 @@ public class SocketRepository {
         }
     }
 
-    public String getStatus(String tutorEmail, String studentEmail) {
+    public Map<String, String> getStatusAndRoom(String tutorEmail, String studentEmail) {
         try {
-            getLogger().log("=== Repository: getStatus ===");
+            getLogger().log("=== Repository: getStatusAndRoom ===");
 
             Map<String, AttributeValue> key = new HashMap<>();
             key.put("tutor_email", AttributeValue.fromS(tutorEmail));
@@ -143,15 +143,24 @@ public class SocketRepository {
                     .key(key)
                     .build());
 
-            return response.hasItem() && response.item().containsKey("status")
-                    ? response.item().get("status").s()
-                    : null;
+            if (!response.hasItem()) {
+                return null;
+            }
+
+            Map<String, AttributeValue> item = response.item();
+            Map<String, String> result = new HashMap<>();
+
+            result.put("status", item.containsKey("status") ? item.get("status").s() : null);
+            result.put("room", item.containsKey("room") ? item.get("room").s() : null);
+
+            return result;
 
         } catch (DynamoDbException e) {
             getLogger().log("❌ DynamoDB Error: " + e.getMessage());
             throw e;
         }
     }
+
 
     public void saveConnection(APIGatewayV2WebSocketEvent event,String tutorEmail, String studentEmail) {
         Map<String, AttributeValue> item = new HashMap<>();
@@ -235,23 +244,26 @@ public class SocketRepository {
             key.put("tutor_email", item.get("tutor_email"));
             key.put("student_email", item.get("student_email"));
 
-            // 3단계: status를 inactive로 + connectionId 제거
+            // 3단계: status를 inactive로 + connectionId 제거 + room: no room
+            //
             Map<String, AttributeValue> attributeValues = new HashMap<>();
             attributeValues.put(":status", AttributeValue.builder().s("inactive").build());
+            attributeValues.put(":room", AttributeValue.builder().s("no room").build());
 
             Map<String, String> attributeNames = new HashMap<>();
             attributeNames.put("#status", "status");
+            attributeNames.put("#room", "room");
 
             UpdateItemRequest request = UpdateItemRequest.builder()
                     .tableName(tutorStudentsTableName)
                     .key(key)
-                    .updateExpression("SET #status = :status REMOVE connectionId")
+                    .updateExpression("SET #status = :status, #room = :room REMOVE connectionId")
                     .expressionAttributeNames(attributeNames)
                     .expressionAttributeValues(attributeValues)
                     .build();
 
             dynamoDbClient.updateItem(request);
-            getLogger().log("✅ Status updated to inactive and connectionId removed");
+            getLogger().log("✅ Status updated to inactive, room set to 'no room', and connectionId removed");
             return true;
 
         } catch (Exception e) {
