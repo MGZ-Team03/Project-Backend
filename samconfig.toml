@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "Project02-SpeakTracker"
+stack_name = "Project02-SpeakTracker-hwkang"
 region = "ap-northeast-2"
 
 [default.build.parameters]
@@ -17,7 +17,7 @@ lint = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-s3_prefix = "Project02-SpeakTracker"
+s3_prefix = "Project02-SpeakTracker-hwkang"
 image_repositories = []
 
 [default.package.parameters]

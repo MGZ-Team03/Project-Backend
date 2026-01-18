@@ -406,8 +406,9 @@ Resources:
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Environment:
         Variables:
-          # TODO: Dev -> {WebSocketApiStage} 로 변경
           WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
+          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
+          FEEDBACK_TABLE: !Ref FeedbackMessagesTable
       Events:
         API1:
           Type: Api
@@ -661,6 +662,9 @@ Resources:
       CodeUri: SentencesWebSocketFunction
       Handler: websocket.App::handleRequest
       Role: !GetAtt WebSocketLambdaRole.Arn
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
       Policies:
         - Statement:
             - Effect: Allow
