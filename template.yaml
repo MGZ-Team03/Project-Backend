@@ -28,6 +28,8 @@ Resources:
   UserPool:
     Type: AWS::Cognito::UserPool
     # 스택 삭제/업데이트 시에도 사용자 데이터 보호
+#    DeletionPolicy: Retain
+#    UpdateReplacePolicy: Retain
     Properties:
       # 동적 네이밍: 여러 환경(dev, staging, prod) 배포 시 충돌 방지
       UserPoolName: !Sub "${AWS::StackName}-userpool"
@@ -170,6 +172,39 @@ Resources:
                   - 'execute-api:ManageConnections'
                 Resource:
                   - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  # TTS 전용 Role (Polly + S3)
+  TTSLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: PollyAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - polly:SynthesizeSpeech
+                Resource: '*'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource:
+                  - !Sub '${TTSAudioBucket.Arn}/*'
 
   # 1. Users 테이블
   UsersTable:
@@ -660,10 +695,11 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: SentencesWebSocketFunction
-      Handler: websocket.App::handleRequest
+      Handler:  websocket.SocketHandler::handleRequest
       Role: !GetAtt WebSocketLambdaRole.Arn
       Environment:
         Variables:
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
       Policies:
         - Statement:
@@ -674,6 +710,53 @@ Resources:
                 - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
     Metadata:
       SamResourceId: SentencesWebSocketFunction
+
+  # TTS Function
+  TTSFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: TTSFunction
+      Handler: com.speaktracker.tts.TTSHandler::handleRequest
+      Role: !GetAtt TTSLambdaRole.Arn
+      Timeout: 60
+      MemorySize: 1024
+      Environment:
+        Variables:
+          AUDIO_BUCKET: !Ref TTSAudioBucket
+          AUDIO_PREFIX: 'tts-audio/'
+      Events:
+        TTSApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /api/tts
+            Method: post
+    Metadata:
+      SamResourceId: TTSFunction
+
+  # S3 Bucket for TTS Audio Files
+  TTSAudioBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'project02-speaktracker-hwkang-tts-audio'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedHeaders:
+              - '*'
+            MaxAge: 3600
 
 
   MyApi:
@@ -744,6 +827,16 @@ Resources:
       ApiId: !Ref WebSocketApi
       RouteKey: $disconnect
       Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  # status
+  # student 상태 5초 간격으로 전달 action/inaction/idle
+  StatusRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: status
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
 
   # $default Route
   DefaultRoute:
@@ -866,3 +959,13 @@ Outputs:
     Value: !Ref SentencesTable
     Export:
       Name: !Sub '${AWS::StackName}-SentencesTable'
+
+  TTSUrl:
+    Description: TTS API URL
+    Value: !Sub 'https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/tts'
+
+  TTSAudioBucketName:
+    Description: TTS Audio S3 Bucket Name
+    Value: !Ref TTSAudioBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-TTSAudioBucket'
