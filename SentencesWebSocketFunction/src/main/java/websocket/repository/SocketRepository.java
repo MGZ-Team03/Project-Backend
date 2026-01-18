@@ -11,8 +11,10 @@ import websocket.dto.StatusRequest;
 
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static com.amazonaws.services.lambda.runtime.LambdaRuntime.getLogger;
 
@@ -21,7 +23,7 @@ public class SocketRepository {
     private final DynamoDbClient dynamoDbClient;
 
     private final String tutorStudentsTableName;
-    String  connectionTable = System.getenv("CONNECTIONS_TABLE");
+    String connectionTable = System.getenv("CONNECTIONS_TABLE");
 
     public void saveTutorStudent(StatusRequest request, APIGatewayV2WebSocketEvent event) {
         getLogger().log("=== Repository 실행 ===");
@@ -279,6 +281,32 @@ public class SocketRepository {
         } catch (Exception e) {
             getLogger().log("❌ Failed to remove connection_id: " + e.getMessage());
             throw new RuntimeException("Failed to handle disconnect", e);
+        }
+    }
+
+    public List<String> getAllActiveConnections() {
+        getLogger().log("=== Repository: GetAllActiveConnections ===");
+        getLogger().log("=== Websokcete 연결 조회 ===");
+        getLogger().log("=== 테이블 : " + tutorStudentsTableName);
+
+        try {
+            ScanRequest scanRequest = ScanRequest.builder()
+                    .tableName(tutorStudentsTableName)
+                    .build();
+            ScanResponse response = dynamoDbClient.scan(scanRequest);
+            getLogger().log("=== socketRepository.getAllActiveConnectionId.result: " + response.toString());
+            List<String> connectionIds = response.items().stream()
+                    .map(item -> item.get("connectionId").s())
+                    .toList();
+
+            getLogger().log("조회 완료: " + connectionIds.size() + "개 연결");
+            getLogger().log("------------------------------------------");
+
+            return connectionIds;
+        } catch (Exception e) {
+            getLogger().log("=== SocketRepository.GetAllActiveConnections: 연결 실패 ===");
+            getLogger().log("에러: "+ e.getMessage());
+            return List.of();
         }
     }
 
