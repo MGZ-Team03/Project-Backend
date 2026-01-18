@@ -189,6 +189,16 @@ Resources:
                   - 'execute-api:ManageConnections'
                 Resource:
                   - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt DashboardQueue.Arn
 
   # 1. Users 테이블
   UsersTable:
@@ -426,6 +436,7 @@ Resources:
       CodeUri: SentencesWebSocketFunction
       Handler: websocket.handler.DashboardSQSHandler::handleRequest
       Role: !GetAtt WebSocketLambdaRole.Arn
+
       Environment:
         Variables:
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
