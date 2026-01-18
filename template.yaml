@@ -738,7 +738,7 @@ Resources:
   TTSAudioBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'project02-speaktracker-hwkang-tts-audio'
+      BucketName: !Sub '${AWS::StackName}-tts-audio'
       PublicAccessBlockConfiguration:
         BlockPublicAcls: false
         BlockPublicPolicy: false
