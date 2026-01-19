@@ -17,9 +17,11 @@ dependencies {
     // HTTP 클라이언트 (Claude API 호출)
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
-    // AWS SDK v2 (Secrets Manager)
+    // AWS SDK v2 (Secrets Manager, SQS, DynamoDB)
     implementation platform('software.amazon.awssdk:bom:2.20.26')
     implementation 'software.amazon.awssdk:secretsmanager'
+    implementation 'software.amazon.awssdk:sqs'
+    implementation 'software.amazon.awssdk:dynamodb'
 }
 
 sourceCompatibility = 21

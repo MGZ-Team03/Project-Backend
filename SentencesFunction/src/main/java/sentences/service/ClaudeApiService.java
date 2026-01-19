@@ -14,21 +14,29 @@ import java.util.Map;
 public class ClaudeApiService {
 
     private static final String CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
-    private static final String CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
+    private static final String DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient client;
     private final ObjectMapper objectMapper;
     private final String apiKey;
+    private final String model;
 
     public ClaudeApiService(String apiKey) {
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            throw new IllegalArgumentException("Claude API key is missing/empty");
+        }
         this.client = new OkHttpClient.Builder()
             .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
             .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
             .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
             .build();
         this.objectMapper = new ObjectMapper();
-        this.apiKey = apiKey;
+        this.apiKey = apiKey.trim();
+        String envModel = System.getenv("CLAUDE_MODEL");
+        this.model = (envModel == null || envModel.trim().isEmpty())
+            ? DEFAULT_CLAUDE_MODEL
+            : envModel.trim();
     }
 
     /**
@@ -37,7 +45,7 @@ public class ClaudeApiService {
     public String callClaudeApi(String systemPrompt, String userPrompt) throws IOException {
         // 요청 본문 구성
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", CLAUDE_MODEL);
+        requestBody.put("model", model);
         requestBody.put("max_tokens", 2000);
         requestBody.put("system", systemPrompt);
         requestBody.put("messages", List.of(
@@ -58,7 +66,10 @@ public class ClaudeApiService {
         // API 호출
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
-                throw new IOException("Claude API call failed: " + response.code() + " - " + response.message());
+                String errBody = response.body() == null ? "" : response.body().string();
+                throw new IOException("Claude API call failed: " + response.code()
+                    + " - " + response.message()
+                    + (errBody.isEmpty() ? "" : " | body=" + truncate(errBody, 500)));
             }
 
             String responseBody = response.body().string();
@@ -89,7 +100,7 @@ public class ClaudeApiService {
 
         // 요청 본문 구성
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", CLAUDE_MODEL);
+        requestBody.put("model", model);
         requestBody.put("max_tokens", 300);
         requestBody.put("system", systemPrompt);
         requestBody.put("messages", apiMessages);
@@ -108,7 +119,10 @@ public class ClaudeApiService {
         // API 호출
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
-                throw new IOException("Claude API call failed: " + response.code() + " - " + response.message());
+                String errBody = response.body() == null ? "" : response.body().string();
+                throw new IOException("Claude API call failed: " + response.code()
+                    + " - " + response.message()
+                    + (errBody.isEmpty() ? "" : " | body=" + truncate(errBody, 500)));
             }
 
             String responseBody = response.body().string();
@@ -122,5 +136,12 @@ public class ClaudeApiService {
 
             throw new IOException("Invalid response format from Claude API");
         }
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null) return null;
+        if (maxLen <= 0) return "";
+        if (s.length() <= maxLen) return s;
+        return s.substring(0, maxLen) + "...(truncated)";
     }
 }

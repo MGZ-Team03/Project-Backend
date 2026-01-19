@@ -26,8 +26,8 @@ public class TTSRequest {
         if (text == null || text.trim().isEmpty()) {
             throw new IllegalArgumentException("text is required");
         }
-        if (text.length() > 3000) {
-            throw new IllegalArgumentException("text exceeds maximum length of 3000 characters");
+        if (text.length() > 511) {
+            throw new IllegalArgumentException("text exceeds maximum length of 511 characters");
         }
     }
 

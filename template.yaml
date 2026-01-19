@@ -126,6 +126,30 @@ Resources:
                   - secretsmanager:GetSecretValue
                 Resource:
                   - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:team3/claude_api_key*'
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:GetQueueUrl
+                Resource:
+                  - !GetAtt AIConversationQueue.Arn
+        - PolicyName: JobStatusTableAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt AsyncJobStatusTable.Arn
 
   # WebSocket 전용 Role
   WebSocketLambdaRole:
@@ -410,7 +434,26 @@ Resources:
         - Key: Name
           Value: Sentences Table
 
-  # 9. Pronunciation Results 테이블
+  # 9. Async Job Status 테이블 (SQS 비동기 작업 상태 추적)
+  AsyncJobStatusTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-async-job-status'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: Async Job Status Table
+
+  # 10. Pronunciation Results 테이블
   PronunciationResultsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -450,6 +493,44 @@ Resources:
       Tags:
         - Key: Name
           Value: Transcribe Temporary Audio Bucket
+
+  # SQS Queues for async processing
+  # TTS Queue
+  TTSQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-tts-queue'
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 3600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TTSDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  TTSDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-tts-dlq'
+      MessageRetentionPeriod: 1209600
+
+  # AI Conversation Queue (FIFO)
+  AIConversationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-ai-conversation-queue.fifo'
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 3600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AIConversationDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  AIConversationDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-ai-conversation-dlq.fifo'
+      FifoQueue: true
+      MessageRetentionPeriod: 1209600
 
   # TTS Audio S3 Bucket
   TTSBucket:
@@ -519,6 +600,30 @@ Resources:
                   - s3:ListBucket
                 Resource:
                   - !GetAtt TTSBucket.Arn
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:GetQueueUrl
+                Resource:
+                  - !GetAtt TTSQueue.Arn
+        - PolicyName: JobStatusTableAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt AsyncJobStatusTable.Arn
 
   # STT (Speech-to-Text) IAM Roles
   STTLambdaRole:
@@ -702,6 +807,8 @@ Resources:
       Environment:
         Variables:
           CLAUDE_API_KEY_SECRET_ID: team3/claude_api_key
+          AI_CONVERSATION_QUEUE_URL: !Ref AIConversationQueue
+          JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
       Events:
         API1:
           Type: Api
@@ -724,6 +831,24 @@ Resources:
               Ref: MyApi
             Path: /api/sentences/generate
             Method: post
+        RecommendSentences:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/sentences/recommend
+            Method: post
+            Auth:
+              Authorizer: CognitoAuthorizer
+        SentenceFeedback:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/sentences/feedback
+            Method: post
+            Auth:
+              Authorizer: CognitoAuthorizer
         ChatStart:
           Type: Api
           Properties:
@@ -742,8 +867,40 @@ Resources:
             Method: post
             Auth:
               Authorizer: CognitoAuthorizer
+        ChatStatus:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/ai/chat/status/{requestId}
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: SentencesFunction
+
+  # Claude Worker Function (SQS 이벤트 처리)
+  ClaudeWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: SentencesFunction
+      Handler: sentences.ClaudeWorker::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          AI_CONVERSATIONS_TABLE: !Ref AIConversationsTable
+          JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
+          CLAUDE_API_KEY_SECRET_ID: team3/claude_api_key
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt AIConversationQueue.Arn
+            BatchSize: 1
+    Metadata:
+      SamResourceId: ClaudeWorkerFunction
   TutorRegisterFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -794,6 +951,8 @@ Resources:
         Variables:
           TTS_BUCKET: !Ref TTSBucket
           PRESIGNED_URL_EXPIRATION: '3600'
+          TTS_QUEUE_URL: !Ref TTSQueue
+          JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
       Events:
         TTSConvert:
           Type: Api
@@ -802,8 +961,52 @@ Resources:
               Ref: MyApi
             Path: /api/tts
             Method: post
+        TTSStatus:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tts/status/{jobId}
+            Method: get
+        KoreanTTSConvert:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tts/korean
+            Method: post
+        KoreanTTSStatus:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tts/korean/status/{jobId}
+            Method: get
     Metadata:
       SamResourceId: TTSFunction
+
+  # TTS Worker Function (SQS 이벤트 처리)
+  TTSWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: TTSFunction
+      Handler: com.speaktracker.tts.TTSWorker::handleRequest
+      Role: !GetAtt TTSLambdaRole.Arn
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          TTS_BUCKET: !Ref TTSBucket
+          JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
+          PRESIGNED_URL_EXPIRATION: '3600'
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt TTSQueue.Arn
+            BatchSize: 1
+    Metadata:
+      SamResourceId: TTSWorkerFunction
 
   # STT Function
   STTFunction:
