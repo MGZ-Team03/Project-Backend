@@ -466,9 +466,11 @@ Resources:
       Environment:
         Variables:
           QUEUE_URL: !Ref DashboardQueue
+          USERS_TABLE: !Ref UsersTable
           SESSIONS_TABLE: !Ref LearningSessionsTable
           STATISTICS_TABLE: !Ref DailyStatisticsTable
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
       Events:
         ScheduleEvent:
           Type: Schedule

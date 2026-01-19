@@ -6,7 +6,6 @@ import com.google.gson.Gson;
 import lombok.RequiredArgsConstructor;
 import websocket.dto.EmailRequest;
 import websocket.dto.StatusRequest;
-import websocket.dto.TutorStudentDto;
 import websocket.dto.WebSocketRequest;
 import websocket.repository.SocketRepository;
 import static com.amazonaws.services.lambda.runtime.LambdaRuntime.getLogger;

@@ -262,28 +262,6 @@ public class SocketRepository {
         }
     }
 
-    public void handleRemoveConAtt(String connectionId) {
-        getLogger().log("=== Repository: Handle RemoveConAtt ===");
-
-        try {
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("connectionId", AttributeValue.builder().s(connectionId).build());
-
-            UpdateItemRequest request = UpdateItemRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .key(key)
-                    .updateExpression("REMOVE connectionId")
-                    .build();
-
-            dynamoDbClient.updateItem(request);
-            getLogger().log("✅ connection_id removed for connectionId: " + connectionId);
-
-        } catch (Exception e) {
-            getLogger().log("❌ Failed to remove connection_id: " + e.getMessage());
-            throw new RuntimeException("Failed to handle disconnect", e);
-        }
-    }
-
     public List<String> getAllActiveConnections() {
         getLogger().log("=== Repository: GetAllActiveConnections ===");
         getLogger().log("=== Websokcete 연결 조회 ===");
@@ -292,12 +270,16 @@ public class SocketRepository {
         try {
             ScanRequest scanRequest = ScanRequest.builder()
                     .tableName(tutorStudentsTableName)
+                    .projectionExpression("connectionId")
                     .build();
             ScanResponse response = dynamoDbClient.scan(scanRequest);
             getLogger().log("=== socketRepository.getAllActiveConnectionId.result: " + response.toString());
+            // 로그아웃이면 null
             List<String> connectionIds = response.items().stream()
-                    .map(item -> item.get("connectionId").s())
-                    .toList();
+                    .map(item -> item.get("connectionId"))
+                    .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
+                    .map(AttributeValue::s)
+                    .collect(Collectors.toList());
 
             getLogger().log("조회 완료: " + connectionIds.size() + "개 연결");
             getLogger().log("------------------------------------------");
@@ -305,9 +287,93 @@ public class SocketRepository {
             return connectionIds;
         } catch (Exception e) {
             getLogger().log("=== SocketRepository.GetAllActiveConnections: 연결 실패 ===");
-            getLogger().log("에러: "+ e.getMessage());
+            getLogger().log("에러: " + e.getMessage());
             return List.of();
         }
     }
+
+
+        /**
+         * 튜터 연결만 조회
+         * student_email = "TUTOR_SELF"인 레코드의 connectionId 반환
+         */
+        public List<String> getTutorConnectionIds() {
+            System.out.println("========================================");
+            System.out.println("  튜터 연결 조회");
+            System.out.println("========================================");
+            System.out.println("테이블: " + tutorStudentsTableName);
+
+            try {
+                Map<String, AttributeValue> expressionValues = new HashMap<>();
+                expressionValues.put(":self", AttributeValue.builder().s("TUTOR_SELF").build());
+
+                ScanRequest scanRequest = ScanRequest.builder()
+                        .tableName(tutorStudentsTableName)
+                        .filterExpression("student_email = :self")
+                        .expressionAttributeValues(expressionValues)
+                        .projectionExpression("connectionId")
+                        .build();
+
+                ScanResponse response = dynamoDbClient.scan(scanRequest);
+
+                List<String> connectionIds = response.items().stream()
+                        .filter(item -> item.containsKey("connectionId"))
+                        .map(item -> item.get("connectionId"))
+                        .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
+                        .map(AttributeValue::s)
+                        .collect(Collectors.toList());
+
+                System.out.println("조회 완료: " + connectionIds.size() + "개 튜터 연결");
+                System.out.println("========================================");
+
+                return connectionIds;
+
+            } catch (Exception e) {
+                System.err.println("========================================");
+                System.err.println("  ⚠️ 튜터 연결 조회 실패 (폴백: 모든 연결 반환)");
+                System.err.println("========================================");
+                System.err.println("에러: " + e.getMessage());
+                e.printStackTrace();
+
+                // 실패 시 모든 연결 반환
+                return getAllActiveConnections();
+            }
+        }
+
+    public List<String> getStudentConnectionIdsByTutor(String tutorEmail) {
+        getLogger().log("=== 튜터별 학생 연결 조회: " + tutorEmail + " ===");
+
+        try {
+            Map<String, AttributeValue> expressionValues = new HashMap<>();
+            expressionValues.put(":tutor", AttributeValue.builder().s(tutorEmail).build());
+            expressionValues.put(":self", AttributeValue.builder().s("TUTOR_SELF").build());
+
+            QueryRequest queryRequest = QueryRequest.builder()
+                    .tableName(tutorStudentsTableName)
+                    .keyConditionExpression("tutor_email = :tutor")
+                    .filterExpression("student_email <> :self")
+                    .expressionAttributeValues(expressionValues)
+                    .projectionExpression("connectionId")
+                    .build();
+
+            QueryResponse response = dynamoDbClient.query(queryRequest);
+
+            List<String> connectionIds = response.items().stream()
+                    .filter(item -> item.containsKey("connectionId"))
+                    .map(item -> item.get("connectionId"))
+                    .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
+                    .map(AttributeValue::s)
+                    .collect(Collectors.toList());
+
+            getLogger().log("조회 완료: " + connectionIds.size() + "개 학생 연결");
+            return connectionIds;
+
+        } catch (Exception e) {
+            System.err.println("에러: " + e.getMessage());
+            e.printStackTrace();
+            return List.of();
+        }
+    }
+
 
 }
