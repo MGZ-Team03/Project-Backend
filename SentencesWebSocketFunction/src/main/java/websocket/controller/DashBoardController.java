@@ -26,6 +26,10 @@ public class DashBoardController {
     public Void handleSQSMessages(SQSEvent event, Context context) {
         context.getLogger().log("=== DashBoardController.handleSQSMessage ===");
 
+        context.getLogger().log("========================================");
+        context.getLogger().log("  대시보드 업데이트 브로드캐스트");
+        context.getLogger().log("========================================");
+
         try {
             // 1. WebSocket 클라이언트 생성
             context.getLogger().log("[1단계] WebSocket 클라이언트 생성");
@@ -51,73 +55,37 @@ public class DashBoardController {
             }
 
             // 3. SQS 메시지 처리
-            int messageCount = 0;
             for (SQSEvent.SQSMessage sqsMessage : event.getRecords()) {
-                messageCount++;
-                context.getLogger().log("\n========================================");
-                context.getLogger().log("  메시지 " + messageCount + " 처리 중");
-                context.getLogger().log("========================================");
-
                 String messageBody = sqsMessage.getBody();
-                context.getLogger().log("📩 수신 원본 JSON:");
-                context.getLogger().log(messageBody);
+                context.getLogger().log("\n📩 브로드캐스트 데이터 크기: " + messageBody.length() + " bytes");
 
-                try {
-                    // JSON 파싱
-                    DashboardDataResponse data = gson.fromJson(messageBody, DashboardDataResponse.class);
-                    context.getLogger().log("\n📊 파싱된 데이터:");
-                    context.getLogger().log("   - 활성 사용자: " + data.getActiveUsers());
-                    context.getLogger().log("   - 학습 시간: " + data.getSpeakingDuration() + "분");
-                    context.getLogger().log("   - 학생 수: " + data.getOrderCount());
+                int successCount = 0;
+                int failCount = 0;
 
-                    // WebSocket 메시지 구성
-                    Map<String, Object> wsMessage = new HashMap<>();
-                    wsMessage.put("type", "dashboard_update");
-                    wsMessage.put("data", data);
-                    wsMessage.put("timestamp", System.currentTimeMillis());
+                // 모든 튜터에게 전송
+                for (String connectionId : connectionIds) {
+                    try {
+                        PostToConnectionRequest request = PostToConnectionRequest.builder()
+                                .connectionId(connectionId)
+                                .data(SdkBytes.fromUtf8String(messageBody))
+                                .build();
 
-                    String finalMessage = gson.toJson(wsMessage);
-                    context.getLogger().log("\n📤 전송할 WebSocket 메시지:");
-                    context.getLogger().log(finalMessage);
+                        wsClient.postToConnection(request);
+                        successCount++;
 
-                    // 4. 모든 연결에 브로드캐스트
-                    context.getLogger().log("\n[3단계] 브로드캐스트 시작");
-                    int successCount = 0;
-                    int failCount = 0;
-
-                    for (String connectionId : connectionIds) {
-                        try {
-                            context.getLogger().log("   → 전송 중: " + connectionId);
-                            PostToConnectionRequest request = PostToConnectionRequest.builder()
-                                    .connectionId(connectionId)
-                                    .data(SdkBytes.fromUtf8String(finalMessage))
-                                    .build();
-                            wsClient.postToConnection(request);
-
-                            context.getLogger().log("   ✅ 성공: " + connectionId);
-                            successCount++;
-                        } catch (GoneException e) {
-                            context.getLogger().log("   ⚠️ 연결 종료됨: " + connectionId);
-                            failCount++;
-                        } catch (Exception e) {
-                            context.getLogger().log("   ❌ 실패: " + connectionId);
-                            context.getLogger().log("      에러: " + e.getMessage());
-                            failCount++;
-                        }
+                    } catch (GoneException e) {
+                        context.getLogger().log("   ⚠️ 연결 종료됨: " + connectionId);
+                        // TODO: tutor_students 테이블에서 connectionId 업데이트 필요
+                        failCount++;
+                    } catch (Exception e) {
+                        context.getLogger().log("   ❌ 전송 실패 [" + connectionId + "]: " + e.getMessage());
+                        failCount++;
                     }
-
-                    context.getLogger().log("\n========================================");
-                    context.getLogger().log("  브로드캐스트 완료");
-                    context.getLogger().log("========================================");
-                    context.getLogger().log("📈 전송 결과:");
-                    context.getLogger().log("   ✅ 성공: " + successCount);
-                    context.getLogger().log("   ❌ 실패: " + failCount);
-                    context.getLogger().log("   📊 총합: " + (successCount + failCount));
-
-                } catch (Exception e) {
-                    context.getLogger().log("❌ JSON 파싱 실패: " + e.getMessage());
-                    continue;
                 }
+
+                context.getLogger().log("\n📈 전송 결과:");
+                context.getLogger().log("   ✅ 성공: " + successCount);
+                context.getLogger().log("   ❌ 실패: " + failCount);
             }
 
         } catch (Exception e) {

@@ -1,15 +1,15 @@
 package websocket.dto.dashboard;
 
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.util.List;
 import java.util.Map;
 
-@Getter
+/**
+ * 대시보드 전체 업데이트 데이터
+ */
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor

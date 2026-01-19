@@ -308,89 +308,6 @@ public class SocketRepository {
         }
     }
 
-
-        /**
-         * 튜터 연결만 조회
-         * student_email = "TUTOR_SELF"인 레코드의 connectionId 반환
-         */
-        public List<String> getTutorConnectionIds() {
-            System.out.println("========================================");
-            System.out.println("  튜터 연결 조회");
-            System.out.println("========================================");
-            System.out.println("테이블: " + tutorStudentsTableName);
-
-            try {
-                Map<String, AttributeValue> expressionValues = new HashMap<>();
-                expressionValues.put(":self", AttributeValue.builder().s("TUTOR_SELF").build());
-
-                ScanRequest scanRequest = ScanRequest.builder()
-                        .tableName(tutorStudentsTableName)
-                        .filterExpression("student_email = :self")
-                        .expressionAttributeValues(expressionValues)
-                        .projectionExpression("connectionId")
-                        .build();
-
-                ScanResponse response = dynamoDbClient.scan(scanRequest);
-
-                List<String> connectionIds = response.items().stream()
-                        .filter(item -> item.containsKey("connectionId"))
-                        .map(item -> item.get("connectionId"))
-                        .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
-                        .map(AttributeValue::s)
-                        .collect(Collectors.toList());
-
-                System.out.println("조회 완료: " + connectionIds.size() + "개 튜터 연결");
-                System.out.println("========================================");
-
-                return connectionIds;
-
-            } catch (Exception e) {
-                System.err.println("========================================");
-                System.err.println("  ⚠️ 튜터 연결 조회 실패 (폴백: 모든 연결 반환)");
-                System.err.println("========================================");
-                System.err.println("에러: " + e.getMessage());
-                e.printStackTrace();
-
-                // 실패 시 모든 연결 반환
-                return getAllActiveConnections();
-            }
-        }
-
-    public List<String> getStudentConnectionIdsByTutor(String tutorEmail) {
-        getLogger().log("=== 튜터별 학생 연결 조회: " + tutorEmail + " ===");
-
-        try {
-            Map<String, AttributeValue> expressionValues = new HashMap<>();
-            expressionValues.put(":tutor", AttributeValue.builder().s(tutorEmail).build());
-            expressionValues.put(":self", AttributeValue.builder().s("TUTOR_SELF").build());
-
-            QueryRequest queryRequest = QueryRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .keyConditionExpression("tutor_email = :tutor")
-                    .filterExpression("student_email <> :self")
-                    .expressionAttributeValues(expressionValues)
-                    .projectionExpression("connectionId")
-                    .build();
-
-            QueryResponse response = dynamoDbClient.query(queryRequest);
-
-            List<String> connectionIds = response.items().stream()
-                    .filter(item -> item.containsKey("connectionId"))
-                    .map(item -> item.get("connectionId"))
-                    .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
-                    .map(AttributeValue::s)
-                    .collect(Collectors.toList());
-
-            getLogger().log("조회 완료: " + connectionIds.size() + "개 학생 연결");
-            return connectionIds;
-
-        } catch (Exception e) {
-            System.err.println("에러: " + e.getMessage());
-            e.printStackTrace();
-            return List.of();
-        }
-    }
-
     private String findIdByTutorStudent(String tutorEmail, String studentEmail) {
         try {
             Map<String, AttributeValue> expressionValues = new HashMap<>();
@@ -420,5 +337,102 @@ public class SocketRepository {
         }
     }
 
+    /**
+     * 모든 활성 연결 조회 (학생 + 튜터)
+     * connectionId가 null이 아닌 레코드만 반환
+     */
+    public List<String> getAllActiveConnectionIds() {
+        System.out.println("========================================");
+        System.out.println("  WebSocket 연결 조회");
+        System.out.println("========================================");
+        System.out.println("테이블: " + tutorStudentsTableName);
+
+        try {
+            ScanRequest scanRequest = ScanRequest.builder()
+                    .tableName(tutorStudentsTableName)
+                    .projectionExpression("connectionId")
+                    .build();
+
+            ScanResponse response = dynamoDbClient.scan(scanRequest);
+
+            // null 체크 및 빈 문자열 필터링
+            List<String> connectionIds = response.items().stream()
+                    .filter(item -> item.containsKey("connectionId"))
+                    .map(item -> item.get("connectionId"))
+                    .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
+                    .map(AttributeValue::s)
+                    .collect(Collectors.toList());
+
+            System.out.println("조회 완료: " + connectionIds.size() + "개 연결");
+            System.out.println("========================================");
+
+            return connectionIds;
+
+        } catch (Exception e) {
+            System.err.println("========================================");
+            System.err.println("  ❌ 연결 조회 실패");
+            System.err.println("========================================");
+            System.err.println("에러: " + e.getMessage());
+            e.printStackTrace();
+            return List.of();
+        }
+    }
+
+    /**
+     * 튜터 연결만 조회
+     * student_email = "TUTOR_SELF"인 레코드의 connectionId 반환
+     *
+     * 튜터가 대시보드 연결 시 다음과 같이 저장:
+     * {
+     *   "id": "uuid",
+     *   "tutor_email": "teacher@test.com",
+     *   "student_email": "TUTOR_SELF",
+     *   "connectionId": "conn-tutor-123",
+     *   "room": "dashboard",
+     *   "status": "active"
+     * }
+     */
+    public List<String> getTutorConnectionIds() {
+        System.out.println("========================================");
+        System.out.println("  튜터 연결 조회");
+        System.out.println("========================================");
+        System.out.println("테이블: " + tutorStudentsTableName);
+
+        try {
+            Map<String, AttributeValue> expressionValues = new HashMap<>();
+            expressionValues.put(":self", AttributeValue.builder().s("TUTOR_SELF").build());
+
+            ScanRequest scanRequest = ScanRequest.builder()
+                    .tableName(tutorStudentsTableName)
+                    .filterExpression("student_email = :self")
+                    .expressionAttributeValues(expressionValues)
+                    .projectionExpression("connectionId")
+                    .build();
+
+            ScanResponse response = dynamoDbClient.scan(scanRequest);
+
+            List<String> connectionIds = response.items().stream()
+                    .filter(item -> item.containsKey("connectionId"))
+                    .map(item -> item.get("connectionId"))
+                    .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
+                    .map(AttributeValue::s)
+                    .collect(Collectors.toList());
+
+            System.out.println("조회 완료: " + connectionIds.size() + "개 튜터 연결");
+            System.out.println("========================================");
+
+            return connectionIds;
+
+        } catch (Exception e) {
+            System.err.println("========================================");
+            System.err.println("  ⚠️ 튜터 연결 조회 실패 (폴백: 모든 연결 반환)");
+            System.err.println("========================================");
+            System.err.println("에러: " + e.getMessage());
+            e.printStackTrace();
+
+            // 실패 시 모든 연결 반환
+            return getAllActiveConnectionIds();
+        }
+    }
 
 }

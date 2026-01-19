@@ -175,7 +175,6 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
             Map<String, Object> recentSession = isConnected ? getRecentSession(studentEmail) : null;
 
 
-
             // 5. 상태 계산
             String status = "inactive";
             String activity = null;
