@@ -751,6 +751,8 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/students
             Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
         API2:
           Type: Api
           Properties:
@@ -758,6 +760,8 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/students/{email}
             Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
         API3:
           Type: Api
           Properties:
@@ -765,6 +769,8 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/students/{email}/history
             Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
         API4:
           Type: Api
           Properties:
@@ -772,6 +778,8 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/feedback
             Method: post
+            Auth:
+              Authorizer: CognitoAuthorizer
         API5:
           Type: Api
           Properties:
@@ -779,6 +787,8 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/feedback
             Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: TutorFunction
 
@@ -828,6 +838,8 @@ Resources:
               Ref: MyApi
             Path: /api/student/tutor
             Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: StudentFunction
 
