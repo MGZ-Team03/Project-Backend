@@ -59,8 +59,6 @@ Resources:
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     # 스택 삭제/업데이트 시에도 클라이언트 설정 보호
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       ClientName: !Sub "${AWS::StackName}-client"
       UserPoolId: !Ref UserPool
@@ -117,6 +115,26 @@ Resources:
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
                   - !Sub '${SentencesTable.Arn}/index/*'
+        - PolicyName: WebSocketManageConnections
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'execute-api:ManageConnections'
+                Resource:
+                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+        - PolicyName: SQSSendMessage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'sqs:SendMessage'
+                  - 'sqs:GetQueueUrl'
+                Resource:
+                  - !GetAtt FeedbackQueue.Arn
+
         - PolicyName: SecretsManagerReadClaudeKey
           PolicyDocument:
             Version: '2012-10-17'
@@ -202,8 +220,6 @@ Resources:
   # 1. Users 테이블
   UsersTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-users'
       BillingMode: PAY_PER_REQUEST
@@ -220,8 +236,6 @@ Resources:
   # 2. Tutor-Students 매칭 테이블
   TutorStudentsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-tutor-students'
       BillingMode: PAY_PER_REQUEST
@@ -249,8 +263,6 @@ Resources:
   # 3. Learning Sessions 테이블
   LearningSessionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-learning-sessions'
       BillingMode: PAY_PER_REQUEST
@@ -285,8 +297,6 @@ Resources:
   # 4. Daily Statistics 테이블
   DailyStatisticsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-daily-statistics'
       BillingMode: PAY_PER_REQUEST
@@ -307,8 +317,6 @@ Resources:
   # 5. AI Conversations 테이블
   AIConversationsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-ai-conversations'
       BillingMode: PAY_PER_REQUEST
@@ -341,8 +349,6 @@ Resources:
   # 6. Feedback Messages 테이블
   FeedbackMessagesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-feedback-messages'
       BillingMode: PAY_PER_REQUEST
@@ -377,8 +383,6 @@ Resources:
   # 7. WebSocket Connections 테이블
   WebSocketConnectionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-websocket-connections'
       BillingMode: PAY_PER_REQUEST
@@ -415,8 +419,6 @@ Resources:
   # 8. Sentences 테이블
   SentencesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-sentences'
       BillingMode: PAY_PER_REQUEST
@@ -733,8 +735,14 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: TutorFunction
-      Handler: tutor.App::handleRequest
+      Handler: com.speaktracker.tutor.TutorFeedbackHandler::handleRequest
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Environment:
+        Variables:
+          WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
+          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
+          FEEDBACK_TABLE: !Ref FeedbackMessagesTable
+          FEEDBACK_QUEUE_URL: !Ref FeedbackQueue
       Events:
         API1:
           Type: Api
@@ -764,6 +772,13 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/feedback
             Method: post
+        API5:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/feedback
+            Method: get
     Metadata:
       SamResourceId: TutorFunction
 
@@ -797,6 +812,24 @@ Resources:
             Method: get
     Metadata:
       SamResourceId: SessionFunction
+
+  StudentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Student API - Get tutor information
+      CodeUri: StudentFunction
+      Handler: com.speaktracker.student.StudentHandler::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/student/tutor
+            Method: get
+    Metadata:
+      SamResourceId: StudentFunction
 
   SentencesFunction:
     Type: AWS::Serverless::Function
@@ -1140,6 +1173,10 @@ Resources:
       CodeUri: SentencesWebSocketFunction
       Handler:  websocket.SocketHandler::handleRequest
       Role: !GetAtt WebSocketLambdaRole.Arn
+      Environment:
+        Variables:
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
       Policies:
         - Statement:
             - Effect: Allow
@@ -1149,6 +1186,59 @@ Resources:
                 - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
     Metadata:
       SamResourceId: SentencesWebSocketFunction
+
+  # ========================================
+  # Feedback Persistence Function (SQS Consumer)
+  # ========================================
+  FeedbackPersistenceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FeedbackPersistenceFunction
+      Handler: com.speaktracker.FeedbackPersistenceHandler::handleRequest
+      Runtime: java21
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          FEEDBACK_TABLE: !Ref FeedbackMessagesTable
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt FeedbackQueue.Arn
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 5
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FeedbackMessagesTable
+        - SQSPollerPolicy:
+            QueueName: !GetAtt FeedbackQueue.QueueName
+    Metadata:
+      SamResourceId: FeedbackPersistenceFunction
+
+  # S3 Bucket for TTS Audio Files
+  TTSAudioBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-tts-audio'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedHeaders:
+              - '*'
+            MaxAge: 3600
 
 
   MyApi:
@@ -1245,6 +1335,41 @@ Resources:
       StageName: Dev
       ApiId: !Ref WebSocketApi
       AutoDeploy: true
+
+  # ========================================
+  # SQS Queues for Feedback Persistence
+  # ========================================
+  FeedbackQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-tutor-feedback-queue'
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600  # 14일
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt FeedbackDLQ.Arn
+        maxReceiveCount: 3
+
+  FeedbackDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-tutor-feedback-dlq'
+      MessageRetentionPeriod: 1209600  # 14일
+
+  # DLQ 모니터링 알람
+  FeedbackDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-FeedbackDLQ-MessagesAvailable'
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt FeedbackDLQ.QueueName
 
 #  # Lambda에 WebSocket 연결 관리 권한 부여
 #  WebSocketPolicy:
@@ -1351,3 +1476,25 @@ Outputs:
     Value: !Ref SentencesTable
     Export:
       Name: !Sub '${AWS::StackName}-SentencesTable'
+
+  TTSUrl:
+    Description: TTS API URL
+    Value: !Sub 'https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/tts'
+
+  TTSAudioBucketName:
+    Description: TTS Audio S3 Bucket Name
+    Value: !Ref TTSAudioBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-TTSAudioBucket'
+
+  FeedbackQueueUrl:
+    Description: Feedback SQS Queue URL
+    Value: !Ref FeedbackQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-FeedbackQueueUrl'
+
+  FeedbackDLQUrl:
+    Description: Feedback DLQ URL
+    Value: !Ref FeedbackDLQ
+    Export:
+      Name: !Sub '${AWS::StackName}-FeedbackDLQUrl'
