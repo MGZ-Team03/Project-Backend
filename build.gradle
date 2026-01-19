@@ -18,6 +18,8 @@ subprojects {
         implementation 'software.amazon.awssdk:dynamodb'
         implementation 'software.amazon.awssdk:s3'
         implementation 'software.amazon.awssdk:ses'
+        implementation 'software.amazon.awssdk:polly'
+        implementation 'software.amazon.awssdk:secretsmanager'
 
         // WebSocket 지원을 위한 AWS SDK
         implementation 'software.amazon.awssdk:apigatewaymanagementapi:2.20.0'

@@ -13,14 +13,13 @@ dependencies {
 
     // JSON 처리
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
-    implementation 'com.google.code.gson:gson:2.10.1'
 
-    // AWS SDK v2 - Polly, S3, SQS, DynamoDB
+    // AWS SDK v2 - STS, DynamoDB, S3, Transcribe
     implementation platform('software.amazon.awssdk:bom:2.20.26')
-    implementation 'software.amazon.awssdk:polly'
-    implementation 'software.amazon.awssdk:s3'
-    implementation 'software.amazon.awssdk:sqs'
+    implementation 'software.amazon.awssdk:sts'
     implementation 'software.amazon.awssdk:dynamodb'
+    implementation 'software.amazon.awssdk:s3'
+    implementation 'software.amazon.awssdk:transcribe'
 }
 
 sourceCompatibility = 21
