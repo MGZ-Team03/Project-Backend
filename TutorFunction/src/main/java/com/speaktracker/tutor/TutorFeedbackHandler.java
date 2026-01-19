@@ -4,6 +4,7 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import software.amazon.awssdk.core.SdkBytes;
@@ -11,6 +12,9 @@ import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagem
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 
 import java.net.URI;
 import java.time.Instant;
@@ -18,6 +22,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 튜터 피드백 Lambda 핸들러
@@ -32,13 +37,18 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
     private static final String FEEDBACK_TABLE = System.getenv("FEEDBACK_TABLE");
     private static final String CONNECTIONS_TABLE = System.getenv("CONNECTIONS_TABLE");
     private static final String WEBSOCKET_ENDPOINT = System.getenv("WEBSOCKET_ENDPOINT");
+    private static final String FEEDBACK_QUEUE_URL = System.getenv("FEEDBACK_QUEUE_URL");
     
     private final DynamoDbClient dynamoDbClient;
+    private final SqsClient sqsClient;
     private final Gson gson;
+    private final ObjectMapper objectMapper;
 
     public TutorFeedbackHandler() {
         this.dynamoDbClient = DynamoDbClient.builder().build();
+        this.sqsClient = SqsClient.builder().build();
         this.gson = new Gson();
+        this.objectMapper = new ObjectMapper();
     }
 
     /**
@@ -141,20 +151,11 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
             String messageText = (String) requestBody.get("message");
             String messageType = (String) requestBody.getOrDefault("message_type", "text");
             String audioUrl = (String) requestBody.get("audio_url");
+            String timestamp = getCurrentTimestamp();
+            String feedbackId = UUID.randomUUID().toString();
 
-            // 3. DynamoDB에 저장
-            String timestamp = saveFeedbackToDB(
-                tutorEmail, 
-                studentEmail, 
-                sessionId, 
-                messageText, 
-                messageType, 
-                audioUrl,
-                context
-            );
-
-            // 4. WebSocket을 통해 학생에게 전송
-            boolean sent = sendToStudentViaWebSocket(
+            // 3. WebSocket을 통해 학생에게 즉시 전송 (실시간성 보장)
+            boolean websocketSent = sendToStudentViaWebSocket(
                 studentEmail, 
                 tutorEmail, 
                 messageText, 
@@ -164,13 +165,28 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
                 context
             );
 
-            // 5. 응답 생성
+            // 4. SQS에 메시지 큐잉 (비동기 DB 저장)
+            sendToSQS(
+                feedbackId,
+                tutorEmail,
+                studentEmail,
+                sessionId,
+                messageText,
+                messageType,
+                audioUrl,
+                timestamp,
+                websocketSent,
+                context
+            );
+
+            // 5. 즉시 응답 반환
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("message_id", generateMessageId(tutorEmail, studentEmail, sessionId, timestamp));
+            response.put("message_id", feedbackId);
             response.put("timestamp", timestamp);
-            response.put("websocket_sent", sent);
+            response.put("websocket_sent", websocketSent);
 
+            context.getLogger().log("✅ Feedback processed - WebSocket: " + websocketSent + ", SQS queued: " + feedbackId);
             return response;
 
         } catch (IllegalArgumentException e) {
@@ -209,50 +225,53 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
     }
 
     /**
-     * DynamoDB에 피드백 저장
+     * SQS에 피드백 메시지 전송
      */
-    private String saveFeedbackToDB(
+    private void sendToSQS(
+            String feedbackId,
             String tutorEmail,
             String studentEmail,
             String sessionId,
             String messageText,
             String messageType,
             String audioUrl,
+            String timestamp,
+            boolean websocketSent,
             Context context) {
 
-        String timestamp = getCurrentTimestamp();
-        String compositeKey = String.format("%s#%s#%s", tutorEmail, studentEmail, sessionId);
-
-        Map<String, AttributeValue> item = new HashMap<>();
-        item.put("composite_key", AttributeValue.builder().s(compositeKey).build());
-        item.put("timestamp", AttributeValue.builder().s(timestamp).build());
-        item.put("tutor_email", AttributeValue.builder().s(tutorEmail).build());
-        item.put("student_email", AttributeValue.builder().s(studentEmail).build());
-        item.put("message_text", AttributeValue.builder().s(messageText).build());
-        item.put("message_type", AttributeValue.builder().s(messageType).build());
-        
-        if (audioUrl != null && !audioUrl.isEmpty()) {
-            item.put("audio_url", AttributeValue.builder().s(audioUrl).build());
-        }
-
-        // TTL: 30일 후 자동 삭제
-        long ttl = Instant.now().plusSeconds(30 * 24 * 60 * 60).getEpochSecond();
-        item.put("ttl", AttributeValue.builder().n(String.valueOf(ttl)).build());
-
         try {
-            PutItemRequest request = PutItemRequest.builder()
-                    .tableName(FEEDBACK_TABLE)
-                    .item(item)
+            // FeedbackMessage 객체 생성
+            FeedbackMessage feedbackMessage = new FeedbackMessage();
+            feedbackMessage.setFeedbackId(feedbackId);
+            feedbackMessage.setTutorEmail(tutorEmail);
+            feedbackMessage.setStudentEmail(studentEmail);
+            feedbackMessage.setSessionId(sessionId);
+            feedbackMessage.setMessage(messageText);
+            feedbackMessage.setMessageType(messageType);
+            feedbackMessage.setTimestamp(timestamp);
+            feedbackMessage.setWebsocketSent(websocketSent);
+            
+            if (audioUrl != null && !audioUrl.isEmpty()) {
+                feedbackMessage.setAudioUrl(audioUrl);
+            }
+
+            // JSON 직렬화
+            String messageBody = objectMapper.writeValueAsString(feedbackMessage);
+
+            // SQS로 전송
+            SendMessageRequest request = SendMessageRequest.builder()
+                    .queueUrl(FEEDBACK_QUEUE_URL)
+                    .messageBody(messageBody)
                     .build();
 
-            dynamoDbClient.putItem(request);
-            context.getLogger().log("✅ Feedback saved to DynamoDB: " + compositeKey);
+            SendMessageResponse response = sqsClient.sendMessage(request);
             
-            return timestamp;
+            context.getLogger().log("✅ Message sent to SQS - MessageId: " + response.messageId() + ", FeedbackId: " + feedbackId);
 
         } catch (Exception e) {
-            context.getLogger().log("❌ DynamoDB save error: " + e.getMessage());
-            throw new RuntimeException("Failed to save feedback to DynamoDB", e);
+            context.getLogger().log("❌ SQS send error: " + e.getMessage());
+            // SQS 전송 실패는 치명적 오류로 처리하지 않음 (WebSocket은 이미 전송됨)
+            // 필요시 재시도 로직 추가 가능
         }
     }
 
@@ -360,7 +379,6 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
                     .indexName("user_email-index")
                     .keyConditionExpression("user_email = :email")
                     .expressionAttributeValues(keyCondition)
-                    .limit(1)
                     .build();
 
             QueryResponse response = dynamoDbClient.query(request);
@@ -369,7 +387,16 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
                 return null;
             }
 
-            return response.items().get(0).get("connection_id").s();
+            // 여러 연결이 있을 경우 connected_at 기준으로 최신 연결 선택
+            return response.items().stream()
+                .filter(item -> item.containsKey("connected_at"))
+                .max((a, b) -> {
+                    String timeA = a.get("connected_at").s();
+                    String timeB = b.get("connected_at").s();
+                    return timeA.compareTo(timeB);
+                })
+                .map(item -> item.get("connection_id").s())
+                .orElse(response.items().get(0).get("connection_id").s());
 
         } catch (Exception e) {
             context.getLogger().log("❌ Error querying connection: " + e.getMessage());
