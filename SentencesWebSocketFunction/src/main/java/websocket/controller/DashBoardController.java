@@ -8,14 +8,10 @@ import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient;
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.GoneException;
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest;
-import websocket.dto.dashboard.DashboardDataResponse;
 import websocket.repository.SocketRepository;
-import websocket.service.SocketService;
 
 import java.net.URI;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @RequiredArgsConstructor
 public class DashBoardController {
