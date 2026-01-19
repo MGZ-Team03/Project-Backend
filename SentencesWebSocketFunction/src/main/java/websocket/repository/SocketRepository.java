@@ -10,10 +10,7 @@ import software.amazon.awssdk.services.dynamodb.model.*;
 import websocket.dto.StatusRequest;
 
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.amazonaws.services.lambda.runtime.LambdaRuntime.getLogger;
@@ -30,39 +27,38 @@ public class SocketRepository {
 
         Map<String, AttributeValue> item = save(request, event);
 
-
         try {
             PutItemRequest build = PutItemRequest.builder()
                     .tableName(tutorStudentsTableName)
                     .item(item)
-                    // 조건: status가 기대하는 값이거나 아이템이 없을 때만 쓰기
-                    .conditionExpression("attribute_not_exists(tutor_email) OR #status <> :newStatus")
-                    .expressionAttributeNames(Map.of("#status", "status"))
-                    .expressionAttributeValues(Map.of(":newStatus", AttributeValue.fromS(request.getStatus())))
+                    // 조건 없이 항상 덮어쓰기 (upsert)
                     .build();
 
             dynamoDbClient.putItem(build);
-            getLogger().log("✅ Item saved successfully");
+            getLogger().log("✅ Item saved/updated successfully");
 
-        } catch (ConditionalCheckFailedException e) {
-            getLogger().log("⚠️ Condition failed - status already updated by another request");
-            // 무시하거나 재시도
+        } catch (Exception e) {
+            getLogger().log("⚠️ Save failed: " + e.getMessage());
+            throw new RuntimeException("Failed to save tutor-student mapping", e);
         }
     }
 
     private static HashMap<String, AttributeValue> save(StatusRequest request, APIGatewayV2WebSocketEvent event) {
         HashMap<String, AttributeValue> item = new HashMap<>();
         String connectionId = event.getRequestContext().getConnectionId();
+        String id = UUID.randomUUID().toString(); // "TutorStudentId" 접두사 제거 (불필요)
 
         getLogger().log("save connectionId : " + connectionId);
 
-        getLogger().log("save repo connectionId: " + connectionId);
-        item.put("tutor_email", AttributeValue.fromS(request.getTutorEmail()));
-        item.put("student_email", AttributeValue.fromS(request.getStudentEmail()));
-        item.put("assigned_at",AttributeValue.fromS(DateTime.now().toString()));
-        item.put("status", AttributeValue.fromS(request.getStatus()));
-        item.put("connectionId", AttributeValue.fromS(connectionId));
-        item.put("room", AttributeValue.fromS(request.getRoom()));
+        // .fromS() 대신 .s() 사용
+        item.put("id", AttributeValue.builder().s(id).build());
+        item.put("tutor_email", AttributeValue.builder().s(request.getTutorEmail()).build());
+        item.put("student_email", AttributeValue.builder().s(request.getStudentEmail()).build());
+        item.put("assigned_at", AttributeValue.builder().s(Instant.now().toString()).build());
+        item.put("status", AttributeValue.builder().s(request.getStatus()).build());
+        item.put("connectionId", AttributeValue.builder().s(connectionId).build());
+        item.put("room", AttributeValue.builder().s(request.getRoom()).build());
+
         return item;
     }
 
@@ -101,30 +97,37 @@ public class SocketRepository {
             getLogger().log("Student: " + studentEmail);
             getLogger().log("New Status: " + status);
 
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("tutor_email", AttributeValue.fromS(tutorEmail));
-            key.put("student_email", AttributeValue.fromS(studentEmail));
+            String id = findIdByTutorStudent(tutorEmail, studentEmail);
+            if (id == null) {
+                getLogger().log("⚠️ Item not found for update");
+                throw new RuntimeException("Item not found");
+            }
 
-            Map<String, AttributeValue> item = new HashMap<>();
+            // 2. id로 키 구성
+            Map<String, AttributeValue> key = new HashMap<>();
+            key.put("id", AttributeValue.builder().s(id).build());
+
+            // 3. 업데이트
             Map<String, AttributeValue> attributeValues = new HashMap<>();
-            attributeValues.put(":newStatus", AttributeValue.fromS(status));
-            attributeValues.put(":updatedAt", AttributeValue.fromS(DateTime.now().toString()));
-            attributeValues.put(":room", AttributeValue.fromS(room));
-            attributeValues.put(":connectionId", AttributeValue.fromS(connectionId));
+            attributeValues.put(":newStatus", AttributeValue.builder().s(status).build());
+            attributeValues.put(":updatedAt", AttributeValue.builder().s(Instant.now().toString()).build());
+            attributeValues.put(":room", AttributeValue.builder().s(room).build());
+            attributeValues.put(":connectionId", AttributeValue.builder().s(connectionId).build());
 
 
             Map<String, String> attributeNames = new HashMap<>();
             attributeNames.put("#status", "status");
 
-            UpdateItemRequest result = UpdateItemRequest.builder()
+            UpdateItemRequest request = UpdateItemRequest.builder()
                     .tableName(tutorStudentsTableName)
                     .key(key)
-                    .updateExpression("SET #status = :newStatus,connectionId = :connectionId,room = :room,  updated_at = :updatedAt")
+                    .updateExpression("SET #status = :newStatus, connectionId = :connectionId, room = :room, updated_at = :updatedAt")
                     .expressionAttributeNames(attributeNames)
                     .expressionAttributeValues(attributeValues)
                     .build();
 
-            dynamoDbClient.updateItem(result);
+
+            dynamoDbClient.updateItem(request);
             getLogger().log("✅ Successfully updated status to: " + status);
         }catch (DynamoDbException e) {
             getLogger().log("❌ DynamoDB Update Error: " + e.getMessage());
@@ -136,18 +139,32 @@ public class SocketRepository {
         try {
             getLogger().log("=== Repository: getStatus ===");
 
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("tutor_email", AttributeValue.fromS(tutorEmail));
-            key.put("student_email", AttributeValue.fromS(studentEmail));
+            Map<String, AttributeValue> expressionValues = new HashMap<>();
+            expressionValues.put(":tutorEmail", AttributeValue.builder().s(tutorEmail).build());
+            expressionValues.put(":studentEmail", AttributeValue.builder().s(studentEmail).build());
 
-            GetItemResponse response = dynamoDbClient.getItem(GetItemRequest.builder()
+            QueryRequest queryRequest = QueryRequest.builder()
                     .tableName(tutorStudentsTableName)
-                    .key(key)
-                    .build());
+                    .indexName("tutor_email-index")  // GSI 사용
+                    .keyConditionExpression("tutor_email = :tutorEmail")
+                    .filterExpression("student_email = :studentEmail")
+                    .expressionAttributeValues(expressionValues)
+                    .limit(1)
+                    .scanIndexForward(false)  // 최신 것 먼저
+                    .build();
 
-            return response.hasItem() && response.item().containsKey("status")
-                    ? response.item().get("status").s()
-                    : null;
+            QueryResponse response = dynamoDbClient.query(queryRequest);
+
+            if (response.items().isEmpty()) {
+                getLogger().log("ℹ️ No item found for tutor: " + tutorEmail + ", student: " + studentEmail);
+                return null;
+            }
+
+            Map<String, AttributeValue> item = response.items().get(0);
+            String status = item.containsKey("status") ? item.get("status").s() : null;
+
+            getLogger().log("✅ Found status: " + status);
+            return status;
 
         } catch (DynamoDbException e) {
             getLogger().log("❌ DynamoDB Error: " + e.getMessage());
@@ -234,8 +251,7 @@ public class SocketRepository {
 
             // 2단계: 실제 PK로 업데이트
             Map<String, AttributeValue> key = new HashMap<>();
-            key.put("tutor_email", item.get("tutor_email"));
-            key.put("student_email", item.get("student_email"));
+            key.put("id", item.get("id"));
 
             // 3단계: status를 inactive로 + connectionId 제거
             Map<String, AttributeValue> attributeValues = new HashMap<>();
@@ -372,6 +388,35 @@ public class SocketRepository {
             System.err.println("에러: " + e.getMessage());
             e.printStackTrace();
             return List.of();
+        }
+    }
+
+    private String findIdByTutorStudent(String tutorEmail, String studentEmail) {
+        try {
+            Map<String, AttributeValue> expressionValues = new HashMap<>();
+            expressionValues.put(":tutorEmail", AttributeValue.builder().s(tutorEmail).build());
+            expressionValues.put(":studentEmail", AttributeValue.builder().s(studentEmail).build());
+
+            QueryRequest queryRequest = QueryRequest.builder()
+                    .tableName(tutorStudentsTableName)
+                    .indexName("tutor_email-index")
+                    .keyConditionExpression("tutor_email = :tutorEmail")
+                    .filterExpression("student_email = :studentEmail")
+                    .expressionAttributeValues(expressionValues)
+                    .limit(1)
+                    .build();
+
+            QueryResponse response = dynamoDbClient.query(queryRequest);
+
+            if (response.items().isEmpty()) {
+                return null;
+            }
+
+            return response.items().get(0).get("id").s();
+
+        } catch (Exception e) {
+            getLogger().log("⚠️ findIdByTutorStudent failed: " + e.getMessage());
+            return null;
         }
     }
 

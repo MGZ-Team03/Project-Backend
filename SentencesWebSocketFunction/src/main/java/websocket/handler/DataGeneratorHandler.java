@@ -29,7 +29,6 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
     private static final String USERS_TABLE = System.getenv("USERS_TABLE");
     private static final String TUTOR_STUDENTS_TABLE = System.getenv("TUTOR_STUDENTS_TABLE");
     private static final String SESSIONS_TABLE = System.getenv("SESSIONS_TABLE");
-    private static final String STATISTICS_TABLE = System.getenv("STATISTICS_TABLE");
 
     public DataGeneratorHandler() {
         this.sqsClient = SqsClient.create();
@@ -139,19 +138,21 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
     /**
      * 모든 학생 정보 조회 (tutor_students 테이블)
      */
-    private List<Map<String, AttributeValue>> getAllStudent(){
+    private List<Map<String, AttributeValue>> getAllStudents(String tutorEmail){
         try {
-            Map<String, AttributeValue> expressionValue = new HashMap<>();
-            expressionValue.put(":status", AttributeValue.builder().s("active").build());
+            Map<String, AttributeValue> expressionValues = new HashMap<>();
+            expressionValues.put(":tutorEmail", AttributeValue.builder().s(tutorEmail).build());
+
             ScanRequest scanRequest = ScanRequest.builder()
                     .tableName(TUTOR_STUDENTS_TABLE)
-                    .filterExpression("status = :status")
-                    .expressionAttributeValues(expressionValue)
+                    .filterExpression("tutor_email = :tutorEmail")
+                    .expressionAttributeValues(expressionValues)
                     .build();
 
             ScanResponse response = dynamoDbClient.scan(scanRequest);
             return response.items();
-        } catch (Exception e) {
+
+        } catch (Exception e){
             getLogger().log("   ⚠️ 학생 목록 조회 실패: " + e.getMessage());
             return List.of();
         }
@@ -172,8 +173,7 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
 
             // 3. 최근 세션 데이터 조회
             Map<String, Object> recentSession = isConnected ? getRecentSession(studentEmail) : null;
-            // 4. 오늘 통계 조회
-            Map<String, Object> todayStats = getTodayStatistics(studentEmail);
+
 
 
             // 5. 상태 계산
@@ -207,12 +207,8 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
                     // 방에는 입장했지만 활동이 없음
                     status = "idle";
                 }
-            } else if (isConnected) {
-                status = "no room";
-                if (todayStats != null) {
-                    duration = (Integer) todayStats.getOrDefault("total_duration", 0) / 60; // 초 -> 분
-                }
-            } else {
+            }
+             else {
                 // 연결되어 있지 않음
                 status = "inactive";
                 lastActive = "5분 전";
@@ -247,35 +243,6 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
 
     }
 
-    private Map<String, Object> getTodayStatistics(String studentEmail) {
-        try {
-            String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
-            GetItemRequest request = GetItemRequest.builder()
-                    .tableName(STATISTICS_TABLE)
-                    .key(Map.of(
-                            "student_email", AttributeValue.builder().s(studentEmail).build(),
-                            "date", AttributeValue.builder().s(today).build()
-                    ))
-                    .build();
-            GetItemResponse response = dynamoDbClient.getItem(request);
-
-            if (!response.hasItem()) {
-                getLogger().log("=== getTodayStatistics.has not Items ===");
-                return null;
-            }
-
-            Map<String, AttributeValue> item = response.item();
-            Map<String, Object> stats = new HashMap<>();
-            stats.put("total_duration", item.containsKey("total_duration")
-                    ? Integer.parseInt(item.get("total_duration").n()) : 0);
-
-            return stats;
-
-        } catch (Exception e){
-            getLogger().log("=== getTodayStatistics.has not Items === : " + e.getMessage());
-            return null;
-        }
-    }
 
     private Map<String, Object> getRecentSession(String studentEmail) {
         try {
@@ -341,19 +308,12 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
 
     private List<Map<String, AttributeValue>> getAllStudents(){
         try {
-            // status가 'active'인 학생만 조회
-            Map<String, AttributeValue>  expressionValues= new HashMap<>();
-            expressionValues.put(":status", AttributeValue.builder().s("active").build());
-
             ScanRequest scanRequest = ScanRequest.builder()
                     .tableName(TUTOR_STUDENTS_TABLE)
-                    .projectionExpression("status = :status")
-                    .expressionAttributeValues(expressionValues)
                     .build();
 
             ScanResponse response = dynamoDbClient.scan(scanRequest);
             return response.items();
-
 
         } catch (Exception e){
             getLogger().log("   ⚠️ 학생 목록 조회 실패: " + e.getMessage());

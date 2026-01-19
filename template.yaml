@@ -222,31 +222,34 @@ Resources:
   # 2. Tutor-Students 매칭 테이블
   TutorStudentsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: Delete  # ← Retain에서 Delete로 변경
+    UpdateReplacePolicy: Delete  # ← 추가
     Properties:
-      TableName: !Sub '${AWS::StackName}-tutor-students'
+      TableName: !Sub '${AWS::StackName}-tutor-students-v2'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
         - AttributeName: tutor_email
           AttributeType: S
         - AttributeName: student_email
           AttributeType: S
       KeySchema:
-        - AttributeName: tutor_email
+        - AttributeName: id
           KeyType: HASH
-        - AttributeName: student_email
-          KeyType: RANGE
       GlobalSecondaryIndexes:
+        - IndexName: tutor_email-index
+          KeySchema:
+            - AttributeName: tutor_email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
         - IndexName: student_email-index
           KeySchema:
             - AttributeName: student_email
               KeyType: HASH
           Projection:
             ProjectionType: ALL
-      Tags:
-        - Key: Name
-          Value: Tutor Students Table
 
   # 3. Learning Sessions 테이블
   LearningSessionsTable:
