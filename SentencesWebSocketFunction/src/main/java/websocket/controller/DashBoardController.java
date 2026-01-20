@@ -8,10 +8,10 @@ import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient;
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.GoneException;
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest;
+import websocket.dto.dashboard.DashboardMessage.DashboardMessage;
 import websocket.repository.SocketRepository;
 
 import java.net.URI;
-import java.util.List;
 
 @RequiredArgsConstructor
 public class DashBoardController {
@@ -35,53 +35,50 @@ public class DashBoardController {
                     .endpointOverride(URI.create(wsEndpoint))
                     .build();
 
-            // 2. 모든 활성 연결 조회
-            context.getLogger().log("\n[2단계] 활성 WebSocket 연결 조회");
-            List<String> connectionIds = socketRepository.getAllActiveConnections();
-            context.getLogger().log("   📊 활성 연결 수: " + connectionIds.size());
-
-            if (connectionIds.isEmpty()) {
-                context.getLogger().log("   ⚠️ 활성 연결이 없습니다. 종료합니다.");
-                return null;
-            }
-
-            context.getLogger().log("   연결 ID 목록:");
-            for (int i = 0; i < connectionIds.size(); i++) {
-                context.getLogger().log("      [" + (i + 1) + "] " + connectionIds.get(i));
-            }
 
             // 3. SQS 메시지 처리
             for (SQSEvent.SQSMessage sqsMessage : event.getRecords()) {
                 String messageBody = sqsMessage.getBody();
                 context.getLogger().log("\n📩 브로드캐스트 데이터 크기: " + messageBody.length() + " bytes");
+                context.getLogger().log("📩 SQS 메시지: " + messageBody);
 
-                int successCount = 0;
-                int failCount = 0;
 
-                // 모든 튜터에게 전송
-                for (String connectionId : connectionIds) {
-                    try {
-                        PostToConnectionRequest request = PostToConnectionRequest.builder()
-                                .connectionId(connectionId)
-                                .data(SdkBytes.fromUtf8String(messageBody))
-                                .build();
+                DashboardMessage msg = gson.fromJson(messageBody, DashboardMessage.class);
+                context.getLogger().log("DashboardMessage : "+ gson.toJson(msg));
 
-                        wsClient.postToConnection(request);
-                        successCount++;
+                // tutorEmail 추출 (첫 번째 학생의 tutorEmail)
+                if (msg.getStudents() == null || msg.getStudents().isEmpty()) {
+                    context.getLogger().log("⚠️ 학생 정보 없음");
+                    continue;
+                }
+                String tutorEmail = msg.getStudents().getFirst().getTutorEmail();
+                context.getLogger().log("🎯 타겟 튜터: " + tutorEmail);
 
-                    } catch (GoneException e) {
-                        context.getLogger().log("   ⚠️ 연결 종료됨: " + connectionId);
-                        // TODO: tutor_students 테이블에서 connectionId 업데이트 필요
-                        failCount++;
-                    } catch (Exception e) {
-                        context.getLogger().log("   ❌ 전송 실패 [" + connectionId + "]: " + e.getMessage());
-                        failCount++;
-                    }
+                // ✅ String으로 받기
+                String connectionId = socketRepository.getTutorConnectionIds(tutorEmail);
+
+                if (connectionId == null) {
+                    context.getLogger().log("⚠️ 튜터 연결 없음");
+                    continue;
                 }
 
-                context.getLogger().log("\n📈 전송 결과:");
-                context.getLogger().log("   ✅ 성공: " + successCount);
-                context.getLogger().log("   ❌ 실패: " + failCount);
+                context.getLogger().log("✅ ConnectionId: " + connectionId);
+
+                // 전송
+                try {
+                    PostToConnectionRequest request = PostToConnectionRequest.builder()
+                            .connectionId(connectionId)
+                            .data(SdkBytes.fromUtf8String(messageBody))
+                            .build();
+
+                    wsClient.postToConnection(request);
+                    context.getLogger().log("✅ 전송 성공!");
+
+                } catch (GoneException e) {
+                    context.getLogger().log("⚠️ 연결 종료됨");
+                } catch (Exception e) {
+                    context.getLogger().log("❌ 전송 실패: " + e.getMessage());
+                }
             }
 
         } catch (Exception e) {

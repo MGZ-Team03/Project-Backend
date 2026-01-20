@@ -214,6 +214,7 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
             return StudentStatusDto.builder()
                     .email(studentEmail)
                     .name(studentName)
+                    .tutorEmail(tutorEmail)
                     .room(activity)
                     .status(status)
                     .speakingRatio(speakingRatio)

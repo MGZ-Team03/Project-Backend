@@ -163,6 +163,10 @@ public class SocketRepository {
     public void saveConnection(APIGatewayV2WebSocketEvent event,String tutorEmail, String studentEmail) {
         Map<String, AttributeValue> item = new HashMap<>();
         getLogger().log("=== Repository: Save Connection ===");
+        getLogger().log("Tutor: " + tutorEmail);
+        getLogger().log("Student: " + studentEmail);
+
+
         String connectionId = event.getRequestContext().getConnectionId();
         item.put("connection_id", AttributeValue.builder().s(connectionId).build());
         item.put("student_email", AttributeValue.builder().s(studentEmail).build());
@@ -176,6 +180,8 @@ public class SocketRepository {
                 .tableName(connectionTable)
                 .item(item)
                 .build();
+
+        getLogger().log(" connection result : " + request.toString());
 
         dynamoDbClient.putItem(request);
     }
@@ -384,36 +390,48 @@ public class SocketRepository {
      *   "status": "active"
      * }
      */
-    public List<String> getTutorConnectionIds() {
+    public String getTutorConnectionIds(String tutorEmail) {
         System.out.println("========================================");
         System.out.println("  튜터 연결 조회");
         System.out.println("========================================");
-        System.out.println("테이블: " + tutorStudentsTableName);
-
+        System.out.println("테이블: " + connectionTable);
         try {
-            Map<String, AttributeValue> expressionValues = new HashMap<>();
-            expressionValues.put(":self", AttributeValue.builder().s("TUTOR_SELF").build());
+           Map<String, AttributeValue> expressionValues = new HashMap<>();
+            expressionValues.put(":email", AttributeValue.builder().s(tutorEmail).build());
 
             ScanRequest scanRequest = ScanRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .filterExpression("student_email = :self")
+                    .tableName(connectionTable)
+                    .filterExpression("tutor_email = :email")
                     .expressionAttributeValues(expressionValues)
-                    .projectionExpression("connectionId")
+                    .projectionExpression("connection_id, connected_at")
                     .build();
 
             ScanResponse response = dynamoDbClient.scan(scanRequest);
+            getLogger().log("=== socketRepository.getTutorConnectionIds === : "+response);
 
-            List<String> connectionIds = response.items().stream()
-                    .filter(item -> item.containsKey("connectionId"))
-                    .map(item -> item.get("connectionId"))
-                    .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
-                    .map(AttributeValue::s)
-                    .collect(Collectors.toList());
+            // 가장 최근 connection_id 하나만 반환
+            String connectionId = response.items().stream()
+                    .filter(item -> item.containsKey("connection_id"))
+                    .filter(item -> item.containsKey("connected_at"))
+                    .sorted((a, b) -> {
+                        String timeA = a.get("connected_at").s();
+                        String timeB = b.get("connected_at").s();
+                        return timeB.compareTo(timeA);
+                    })
+                    .limit(1)
+                    .map(item -> item.get("connection_id").s())
+                    .findFirst()  // ✅ List 대신 Optional
+                    .orElse(null);  // ✅ 없으면 null
 
-            System.out.println("조회 완료: " + connectionIds.size() + "개 튜터 연결");
-            System.out.println("========================================");
 
-            return connectionIds;
+            if (connectionId != null) {
+                getLogger().log("✅ ConnectionId 발견: " + connectionId);
+            } else {
+                getLogger().log("⚠️ 연결 없음");
+            }
+
+            return connectionId;
+
 
         } catch (Exception e) {
             System.err.println("========================================");
@@ -422,8 +440,27 @@ public class SocketRepository {
             System.err.println("에러: " + e.getMessage());
             e.printStackTrace();
 
-            // 실패 시 모든 연결 반환
-            return getAllActiveConnectionIds();
+            return null;
+        }
+    }
+
+    public boolean existsConnectionId(String connectionId) {
+        try {
+            Map<String, AttributeValue> key = new HashMap<>();
+            key.put("connection_id", AttributeValue.builder().s(connectionId).build());
+
+            GetItemRequest request = GetItemRequest.builder()
+                    .tableName(connectionTable)
+                    .key(key)
+                    .build();
+
+            GetItemResponse response = dynamoDbClient.getItem(request);
+
+            return response.hasItem();
+
+        } catch (Exception e) {
+            getLogger().log("❌ Error: " + e.getMessage());
+            return false;
         }
     }
 

@@ -106,4 +106,21 @@ public class SocketService {
         return createResponse(200, request.getStatus());
     }
 
+    public APIGatewayV2WebSocketResponse handleDashboard(APIGatewayV2WebSocketEvent event) {
+        String connectionId = event.getRequestContext().getConnectionId();
+        EmailRequest request = gson.fromJson(event.getBody(), EmailRequest.class);
+        getLogger().log("handleDashboard.reqeust: " + request.getTutorEmail() + ", " + request.getStudentEmail());
+
+        boolean exists = socketRepository.existsByConnectionId(connectionId);
+
+        if (!exists) {
+            socketRepository.saveConnection(event, request.getTutorEmail(), request.getStudentEmail());
+        }else {
+            getLogger().log("-==== exist connecionId === ");
+        }
+
+        return createResponse(200, event.getBody());
+
+    }
+
 }

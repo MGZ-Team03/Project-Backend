@@ -15,6 +15,7 @@ import lombok.*;
 @AllArgsConstructor
 public class StudentStatusDto {
     private String email;
+    private String tutorEmail;
     private String name;
     private String room;          // "sentence" | "ai" | null
     private String status;             // "speaking" | "listening" | "inactive"

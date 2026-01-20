@@ -30,12 +30,18 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
         try {
             switch (routeKey) {
                 case "$connect":
+                    context.getLogger().log("$connect.getbody: " + event.getBody());
                     return handleConnect(event,context);
 
                 case "$disconnect":
                     context.getLogger().log("Disconnect!!");
                     String connectionId = event.getRequestContext().getConnectionId();
                     return socketService.handleDisconnect(connectionId);
+
+                case "dashboard":
+                    context.getLogger().log("📊 dashboard 인증 요청");
+                    context.getLogger().log("$dashboard.getbody: " + event.getBody());
+                    return socketService.handleDashboard(event);
 
                 case "status":
                     Type type = new TypeToken<WebSocketRequest<StatusRequest>>(){}.getType();

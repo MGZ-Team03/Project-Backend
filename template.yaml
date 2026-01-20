@@ -439,6 +439,7 @@ Resources:
       Environment:
         Variables:
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable  # ← 추가!
           WS_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
       Events:
         SQSEvent:
@@ -801,6 +802,16 @@ Resources:
       ApiId: !Ref WebSocketApi
       RouteKey: $connect
       Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  # dashboard Route
+  DashboardRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: dashboard
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+
 
   # $disconnect Route
   DisconnectRoute:

@@ -38,7 +38,6 @@ public class DashboardSQSHandler implements RequestHandler<SQSEvent, Void> {
         );
 
     }
-
     @Override
     public Void handleRequest(SQSEvent event, Context context) {
         context.getLogger().log("========================================");
