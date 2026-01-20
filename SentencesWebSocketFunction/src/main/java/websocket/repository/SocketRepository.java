@@ -48,7 +48,12 @@ public class SocketRepository {
         String connectionId = event.getRequestContext().getConnectionId();
 
 
-        getLogger().log("save connectionId : " + connectionId);
+        if ("undefined".equalsIgnoreCase(request.getTutorEmail()) ||
+                "unknown@example.com".equals(request.getTutorEmail())) {
+            getLogger().log("❌❌❌ CRITICAL: tutorEmail이 유효하지 않습니다: " + request.getTutorEmail());
+            getLogger().log("프론트엔드에서 올바른 tutorEmail을 전달해주세요!");
+            throw new IllegalArgumentException("유효하지 않은 tutorEmail: " + request.getTutorEmail());
+        }
 
         // .fromS() 대신 .s() 사용
         item.put("tutor_email", AttributeValue.builder().s(request.getTutorEmail()).build());
@@ -160,15 +165,13 @@ public class SocketRepository {
         }
     }
 
-    public void saveConnection(APIGatewayV2WebSocketEvent event,String tutorEmail, String studentEmail) {
+    public void saveConnection(APIGatewayV2WebSocketEvent event,String tutorEmail) {
         Map<String, AttributeValue> item = new HashMap<>();
         getLogger().log("=== Repository: Save Connection ===");
         getLogger().log("Tutor: " + tutorEmail);
-        getLogger().log("Student: " + studentEmail);
 
         String connectionId = event.getRequestContext().getConnectionId();
         item.put("connection_id", AttributeValue.builder().s(connectionId).build());
-        item.put("student_email", AttributeValue.builder().s(studentEmail).build());
         item.put("tutor_email", AttributeValue.builder().s(tutorEmail).build());
         item.put("connected_at", AttributeValue.builder().s(Instant.now().toString()).build());
         // TTL: 한 달 후
@@ -397,6 +400,7 @@ public class SocketRepository {
         try {
            Map<String, AttributeValue> expressionValues = new HashMap<>();
             expressionValues.put(":email", AttributeValue.builder().s(tutorEmail).build());
+            getLogger().log("getTutorconnectionIds.tutorEmail: " + tutorEmail);
 
             ScanRequest scanRequest = ScanRequest.builder()
                     .tableName(connectionTable)

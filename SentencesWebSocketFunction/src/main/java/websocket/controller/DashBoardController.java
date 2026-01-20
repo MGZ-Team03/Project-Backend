@@ -75,7 +75,7 @@ public class DashBoardController {
                     context.getLogger().log("✅ 전송 성공!");
 
                 } catch (GoneException e) {
-                    context.getLogger().log("⚠️ 연결 종료됨");
+                    context.getLogger().log("handelSQSMessage: ⚠️ 연결 종료됨");
                 } catch (Exception e) {
                     context.getLogger().log("❌ 전송 실패: " + e.getMessage());
                 }

@@ -30,7 +30,7 @@ public class SocketService {
         String connectionId = event.getRequestContext().getConnectionId();
         EmailRequest request = gson.fromJson(event.getBody(), EmailRequest.class);
         getLogger().log("handleConnect.reqeust: " + request);
-        socketRepository.saveConnection(event,request.getTutorEmail(), request.getStudentEmail());
+        socketRepository.saveConnection(event,request.getTutorEmail());
 
         return createResponse(200, "ok");
     }
@@ -78,8 +78,8 @@ public class SocketService {
 
         boolean exists = socketRepository.existsByConnectionId(connectionId);
 
-        if (!exists) {
-            socketRepository.saveConnection(event,request.getTutorEmail(), request.getStudentEmail());
+        if (!exists && request.getStudentEmail() == null) {
+            socketRepository.saveConnection(event,request.getTutorEmail());
         }
 
         // 아이템이 존재하지 않는 경우 - 새로 생성
@@ -109,12 +109,17 @@ public class SocketService {
     public APIGatewayV2WebSocketResponse handleDashboard(APIGatewayV2WebSocketEvent event) {
         String connectionId = event.getRequestContext().getConnectionId();
         EmailRequest request = gson.fromJson(event.getBody(), EmailRequest.class);
+        getLogger().log("handleDashboard.reqeust: " + request.getUserType());
+        getLogger().log("handleDashboard.reqeust.student?: " + request.getStudentEmail());
+
+
         getLogger().log("handleDashboard.reqeust: " + request.getTutorEmail() + ", " + request.getStudentEmail());
 
         boolean exists = socketRepository.existsByConnectionId(connectionId);
 
-        if (!exists) {
-            socketRepository.saveConnection(event, request.getTutorEmail(), request.getStudentEmail());
+        if (!exists && request.getStudentEmail() == null) {
+            getLogger().log("handleDashboard save connection");
+            socketRepository.saveConnection(event, request.getTutorEmail());
         }else {
             getLogger().log("-==== exist connecionId === ");
         }
