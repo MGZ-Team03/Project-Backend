@@ -56,7 +56,19 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
 
     private APIGatewayV2WebSocketResponse handleConnect(APIGatewayV2WebSocketEvent event, Context context) {
         String connectionId = event.getRequestContext().getConnectionId();
-        context.getLogger().log("Client connected: " + connectionId);
+        
+        // 쿼리 파라미터에서 user_email 추출
+        String userEmail = null;
+        if (event.getQueryStringParameters() != null) {
+            userEmail = event.getQueryStringParameters().get("user_email");
+        }
+        
+        context.getLogger().log("Client connected: " + connectionId + " | User: " + userEmail);
+        
+        // CONNECTIONS_TABLE에 connectionId 저장 (튜터 피드백용)
+        if (userEmail != null && !userEmail.isEmpty()) {
+            socketService.saveConnection(connectionId, userEmail);
+        }
 
         return createResponse(200, "Connected!!!");
     }

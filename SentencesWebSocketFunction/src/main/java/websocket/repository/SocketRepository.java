@@ -22,6 +22,7 @@ public class SocketRepository {
 
     private final String tutorStudentsTableName;
     String connectionTable = System.getenv("CONNECTIONS_TABLE");
+    private final String connectionsTableName;
 
     public void saveTutorStudent(StatusRequest request, APIGatewayV2WebSocketEvent event) {
         getLogger().log("=== Repository 실행 ===");
@@ -291,6 +292,60 @@ public class SocketRepository {
         } catch (Exception e) {
             getLogger().log("❌ Failed to remove connection_id: " + e.getMessage());
             throw new RuntimeException("Failed to handle disconnect", e);
+    /**
+     * CONNECTIONS_TABLE에 connectionId 저장 (튜터 피드백용)
+     */
+    public void saveConnection(String connectionId, String userEmail) {
+        try {
+            getLogger().log("=== Repository: Save Connection ===");
+            getLogger().log("ConnectionId: " + connectionId);
+            getLogger().log("UserEmail: " + userEmail);
+            getLogger().log("Table: " + connectionsTableName);
+
+            Map<String, AttributeValue> item = new HashMap<>();
+            item.put("connection_id", AttributeValue.fromS(connectionId));
+            item.put("user_email", AttributeValue.fromS(userEmail));
+            item.put("connected_at", AttributeValue.fromS(DateTime.now().toString()));
+            
+            // TTL: 24시간 후 자동 삭제
+            long ttl = System.currentTimeMillis() / 1000 + (24 * 60 * 60);
+            item.put("ttl", AttributeValue.fromN(String.valueOf(ttl)));
+
+            PutItemRequest request = PutItemRequest.builder()
+                    .tableName(connectionsTableName)
+                    .item(item)
+                    .build();
+
+            dynamoDbClient.putItem(request);
+            getLogger().log("✅ Connection saved successfully");
+
+        } catch (DynamoDbException e) {
+            getLogger().log("❌ Failed to save connection: " + e.getMessage());
+            throw new RuntimeException("Failed to save connection", e);
+        }
+    }
+
+    /**
+     * CONNECTIONS_TABLE에서 connectionId 삭제
+     */
+    public void deleteConnection(String connectionId) {
+        try {
+            getLogger().log("=== Repository: Delete Connection ===");
+            getLogger().log("ConnectionId: " + connectionId);
+
+            Map<String, AttributeValue> key = new HashMap<>();
+            key.put("connection_id", AttributeValue.fromS(connectionId));
+
+            DeleteItemRequest request = DeleteItemRequest.builder()
+                    .tableName(connectionsTableName)
+                    .key(key)
+                    .build();
+
+            dynamoDbClient.deleteItem(request);
+            getLogger().log("✅ Connection deleted successfully");
+
+        } catch (DynamoDbException e) {
+            getLogger().log("❌ Failed to delete connection: " + e.getMessage());
         }
     }
 

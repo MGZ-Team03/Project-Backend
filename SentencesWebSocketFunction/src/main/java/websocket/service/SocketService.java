@@ -34,21 +34,38 @@ public class SocketService {
     }
 
     /**
-     * Disconnect 시 호출: status를 "inactive"로 업데이트
+     * Connect 시 connectionId 저장
      */
-    public APIGatewayV2WebSocketResponse handleDisconnect(String connectionId) {
-        getLogger().log("=== Service: Handle Disconnect === ConnectionID: " + connectionId);
+    public void saveConnection(String connectionId, String userEmail) {
+        getLogger().log("=== Service: Save Connection ===");
+        socketRepository.saveConnection(connectionId, userEmail);
+    }
 
-
-        boolean success = socketRepository.handleDisConnect(connectionId);
-
-        if (success) {
-            getLogger().log("handleDisconnect.reqeust: disconnected.success");
-            return createResponse(200, "disconnected");
-        } else {
-            getLogger().log("student not found.handledisconnect");
-            return createResponse(404, "student not found");
+    /**
+     * Disconnect 시 호출: status를 "inactive"로 업데이트 + connectionId 삭제
+     */
+    /**
+     * Disconnect 시 호출: status를 "inactive"로 업데이트 + connectionId 삭제
+     */
+    public APIGatewayV2WebSocketResponse handleDisconnect(APIGatewayV2WebSocketEvent event, String connectionId){
+        getLogger().log("=== Service: Handle Disconnect ===");
+        
+        // connectionId 삭제
+        socketRepository.deleteConnection(connectionId);
+        
+        // 학생 상태 업데이트 (body가 있는 경우만)
+        if (event.getBody() != null && !event.getBody().isEmpty()) {
+            EmailRequest request = gson.fromJson(event.getBody(), EmailRequest.class);
+            boolean exists = socketRepository.existsTutorStudent(request.getTutorEmail(), request.getStudentEmail());
+            if (exists) {
+                getLogger().log("📌 Updating status to 'inactive'");
+                socketRepository.updateStatus(request.getTutorEmail(), request.getStudentEmail(), "inactive");
+            } else {
+                getLogger().log("⚠️ Tutor-Student not found, skipping disconnect");
+            }
         }
+
+        return createResponse(200,"disconnected");
     }
     /**
      * status 업데이트

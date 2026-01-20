@@ -20,12 +20,14 @@ public class SocketHandler implements RequestHandler<APIGatewayV2WebSocketEvent,
 
     public SocketHandler() {
         // 환경 변수에서 테이블 이름 가져오기
-        String tableName = System.getenv("TUTOR_STUDENTS_TABLE");
+        String tutorStudentsTable = System.getenv("TUTOR_STUDENTS_TABLE");
+        String connectionsTable = System.getenv("CONNECTIONS_TABLE");
 
         // 의존성 수동 주입
         SocketRepository repository = new SocketRepository(
                 DynamoDbConfig.connectDynamoDb(),
-                tableName
+                tutorStudentsTable,
+                connectionsTable
         );
         SocketService service = new SocketService(repository);
         this.controller = new SocketController(service, new Gson());
