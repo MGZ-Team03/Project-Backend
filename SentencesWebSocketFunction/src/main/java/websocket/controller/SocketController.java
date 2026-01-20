@@ -9,7 +9,6 @@ import com.google.gson.reflect.TypeToken;
 import lombok.RequiredArgsConstructor;
 import websocket.dto.StatusRequest;
 import websocket.dto.WebSocketRequest;
-import websocket.repository.SocketRepository;
 import websocket.service.SocketService;
 
 import java.lang.reflect.Type;

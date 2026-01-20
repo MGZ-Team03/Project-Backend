@@ -23,7 +23,6 @@ import static websocket.controller.SocketController.createResponse;
 public class SocketService {
     private final SocketRepository socketRepository;
     private final Gson gson = new Gson();
-
     public APIGatewayV2WebSocketResponse handleConnect(APIGatewayV2WebSocketEvent event) {
         getLogger().log("------------connect handler-------------");
 
@@ -123,9 +122,7 @@ public class SocketService {
         }else {
             getLogger().log("-==== exist connecionId === ");
         }
-
         return createResponse(200, event.getBody());
 
     }
-
 }
