@@ -11,8 +11,6 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 import websocket.dto.dashboard.DashboardUpdateDto;
 import websocket.dto.dashboard.StudentStatusDto;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 import static com.amazonaws.services.lambda.runtime.LambdaRuntime.getLogger;
