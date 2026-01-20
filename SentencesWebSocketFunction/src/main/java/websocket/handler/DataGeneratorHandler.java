@@ -293,8 +293,6 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
             GetItemRequest request = GetItemRequest.builder()
                     .tableName(USERS_TABLE)
                     .key(Map.of("email", AttributeValue.builder().s(studentEmail).build()))
-                    // .projectionExpression("#n")  // ← 일단 주석 처리
-                    // .expressionAttributeNames(Map.of("#n", "name"))
                     .build();
 
             GetItemResponse response = dynamoDbClient.getItem(request);
