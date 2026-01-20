@@ -166,7 +166,6 @@ public class SocketRepository {
         getLogger().log("Tutor: " + tutorEmail);
         getLogger().log("Student: " + studentEmail);
 
-
         String connectionId = event.getRequestContext().getConnectionId();
         item.put("connection_id", AttributeValue.builder().s(connectionId).build());
         item.put("student_email", AttributeValue.builder().s(studentEmail).build());

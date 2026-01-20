@@ -40,9 +40,9 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
         context.getLogger().log("========================================");
         context.getLogger().log("  학생 상태 수집 시작");
         context.getLogger().log("========================================");
-        context.getLogger().log("실행 시간: " + java.time.LocalDateTime.now());
 
         try {
+            // 1. 학생 목록 조회
             getLogger().log("\n[1단계] 학생 목록 조회 중...");
             List<Map<String, AttributeValue>> studentRecords = getAllStudents();
             getLogger().log("   전체 학생 수: " + studentRecords.size());
@@ -51,74 +51,77 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
             context.getLogger().log("\n[2단계] 각 학생 상태 수집 중...");
             List<StudentStatusDto> studentStatuses = new ArrayList<>();
 
+            // ✅ 루프: 모든 학생 처리
             for (Map<String, AttributeValue> record : studentRecords) {
-               String studentEmail = record.get("student_email").s();
-               String tutorEmail = record.get("tutor_email").s();
+                String studentEmail = record.get("student_email").s();
+                String tutorEmail = record.get("tutor_email").s();
 
-                // TUTOR_SELF는 건너뛰기
-                if ("TUTOR_SELF".equals(studentEmail)) {
-                    continue;
-                }
+                String room = record.containsKey("room") && !"no room".equals(record.get("room").s())
+                        ? record.get("room").s()
+                        : "idle";
 
-                String room = record.containsKey("room") && record.get("room").s() != "no room" ?
-                        record.get("room").s() : "idle";
                 String connectionId = record.containsKey("connectionId") && record.get("connectionId") != null
-                        ? record.get("connectionId").s() : null;
+                        ? record.get("connectionId").s()
+                        : null;
 
                 StudentStatusDto studentStatus = collectStudentStatus(studentEmail, tutorEmail, room, connectionId);
                 studentStatuses.add(studentStatus);
-
-                // 3. 통계 계산
-                int activeCount = (int) studentStatuses.stream()
-                        .filter(s -> !"inactive".equals(s.getStatus()))
-                        .count();
-
-                int speakingCount = (int) studentStatuses.stream()
-                        .filter(s -> "speaking".equals(s.getStatus()))
-                        .count();
-
-                int warningCount = (int) studentStatuses.stream()
-                        .filter(s -> Boolean.TRUE.equals(s.getWarning()) || Boolean.TRUE.equals(s.getAlert()))
-                        .count();
-
-                context.getLogger().log("\n[3단계] 통계:");
-                context.getLogger().log("   - 전체: " + studentStatuses.size() + "명");
-                context.getLogger().log("   - 활동 중: " + activeCount + "명");
-                context.getLogger().log("   - 발음 중: " + speakingCount + "명");
-                context.getLogger().log("   - 주의 필요: " + warningCount + "명");
-
-                // 4. 대시보드 업데이트 DTO 구성
-                DashboardUpdateDto dashboardUpdate = DashboardUpdateDto.builder()
-                        .type("dashboard_update")
-                        .timestamp(System.currentTimeMillis())
-                        .students(studentStatuses)
-                        .summary(Map.of(
-                                "total", studentStatuses.size(),
-                                "active", activeCount,
-                                "speaking", speakingCount,
-                                "warning", warningCount
-                        ))
-                        .build();
-
-                String messageBody = gson.toJson(dashboardUpdate);
-                context.getLogger().log("\n[4단계] JSON 변환 완료 (크기: " + messageBody.length() + " bytes)");
-
-                getLogger().log("\n[5단계] SQS에 전송 중...");
-                SendMessageRequest sendRequest = SendMessageRequest.builder()
-                        .queueUrl(QUEUE_URL)
-                        .messageBody(messageBody)
-                        .build();
-
-                sqsClient.sendMessage(sendRequest);
-
-                context.getLogger().log("✅ SQS 전송 완료!");
-                context.getLogger().log("========================================");
-
-                return "Success: " + studentStatuses.size() + " students processed";
-
-
             }
+            // ✅ 루프 종료
+
             getLogger().log("   상태 수집 완료: " + studentStatuses.size() + "명");
+
+            // 3. 통계 계산 (루프 밖에서!)
+            context.getLogger().log("\n[3단계] 통계 계산 중...");
+
+            int activeCount = (int) studentStatuses.stream()
+                    .filter(s -> !"inactive".equals(s.getStatus()))
+                    .count();
+
+            int speakingCount = (int) studentStatuses.stream()
+                    .filter(s -> "speaking".equals(s.getStatus()))
+                    .count();
+
+            int warningCount = (int) studentStatuses.stream()
+                    .filter(s -> Boolean.TRUE.equals(s.getWarning()) || Boolean.TRUE.equals(s.getAlert()))
+                    .count();
+
+            context.getLogger().log("   - 전체: " + studentStatuses.size() + "명");
+            context.getLogger().log("   - 활동 중: " + activeCount + "명");
+            context.getLogger().log("   - 발음 중: " + speakingCount + "명");
+            context.getLogger().log("   - 주의 필요: " + warningCount + "명");
+
+            // 4. 대시보드 업데이트 DTO 구성 (루프 밖에서!)
+            DashboardUpdateDto dashboardUpdate = DashboardUpdateDto.builder()
+                    .type("dashboard_update")
+                    .timestamp(System.currentTimeMillis())
+                    .students(studentStatuses)
+                    .summary(Map.of(
+                            "total", studentStatuses.size(),
+                            "active", activeCount,
+                            "speaking", speakingCount,
+                            "warning", warningCount
+                    ))
+                    .build();
+
+            // 5. JSON 변환
+            String messageBody = gson.toJson(dashboardUpdate);
+            context.getLogger().log("\n[4단계] JSON 변환 완료 (크기: " + messageBody.length() + " bytes)");
+
+            // 6. SQS 전송
+            getLogger().log("\n[5단계] SQS에 전송 중...");
+            SendMessageRequest sendRequest = SendMessageRequest.builder()
+                    .queueUrl(QUEUE_URL)
+                    .messageBody(messageBody)
+                    .build();
+
+            sqsClient.sendMessage(sendRequest);
+
+            context.getLogger().log("✅ SQS 전송 완료!");
+            context.getLogger().log("========================================");
+
+            return "Success: " + studentStatuses.size() + " students processed";
+
 
 
         } catch (Exception e){
@@ -129,8 +132,6 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
             e.printStackTrace();
             throw new RuntimeException("Failed to collect student statuses", e);
         }
-
-        return "";
     }
 
     /**
@@ -284,22 +285,46 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
     }
     private String getStudentName(String studentEmail) {
         getLogger().log("==== get student name ====");
+        getLogger().log("Student Email: " + studentEmail);
+        getLogger().log("Table Name: " + USERS_TABLE);
+
         try {
+            // ✅ projectionExpression 제거하고 전체 아이템 가져오기
             GetItemRequest request = GetItemRequest.builder()
                     .tableName(USERS_TABLE)
                     .key(Map.of("email", AttributeValue.builder().s(studentEmail).build()))
-                    .projectionExpression("name")
+                    // .projectionExpression("#n")  // ← 일단 주석 처리
+                    // .expressionAttributeNames(Map.of("#n", "name"))
                     .build();
+
             GetItemResponse response = dynamoDbClient.getItem(request);
 
-            if (response.hasItem() && response.item().containsKey("name")) {
-                return response.item().get("name").s();
+            getLogger().log("Has Item: " + response.hasItem());
+
+            // ✅ 전체 아이템 내용 확인
+            if (response.hasItem()) {
+                getLogger().log("전체 아이템: " + response.item());
+                getLogger().log("아이템 키들: " + response.item().keySet());
+
+                // name 필드 확인
+                if (response.item().containsKey("name")) {
+                    String name = response.item().get("name").s();
+                    getLogger().log("✅ Found name: " + name);
+                    return name;
+                } else {
+                    getLogger().log("❌ name 필드가 없습니다!");
+                    getLogger().log("사용 가능한 필드: " + response.item().keySet());
+                }
+            } else {
+                getLogger().log("❌ 아이템을 찾을 수 없습니다!");
+                getLogger().log("검색한 이메일: " + studentEmail);
             }
 
-            // 이름 없으면 이메일 앞부분
             return studentEmail.split("@")[0];
-        } catch (Exception e){
-            getLogger().log("====== get student name not found ====");
+
+        } catch (Exception e) {
+            getLogger().log("❌ Error: " + e.getMessage());
+            e.printStackTrace();
             return studentEmail.split("@")[0];
         }
     }
@@ -311,6 +336,8 @@ public class DataGeneratorHandler implements RequestHandler <Object, String>{
                     .build();
 
             ScanResponse response = dynamoDbClient.scan(scanRequest);
+            getLogger().log("=== get AllStudents ==== : " +response.items().size());
+            getLogger().log("=== get AllStudents ==== : " +response.items());
             return response.items();
 
         } catch (Exception e){
