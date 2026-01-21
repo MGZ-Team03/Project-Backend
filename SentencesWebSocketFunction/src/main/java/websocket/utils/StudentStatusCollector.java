@@ -191,7 +191,7 @@ public class StudentStatusCollector {
             boolean warning = false;
             boolean alert = false;
             String lastActive = null;
-//isConnected && room != "no room" && !room.isEmpty()
+
             // 📊 상태 결정 로직
             if (isConnected && !Objects.equals(room, "no room") && !room.isEmpty()) {
                 getLogger().log("✅ 유효한 방에 입장: " + room);
@@ -218,14 +218,20 @@ public class StudentStatusCollector {
                 } else {
                     // 방에는 있지만 최근 5분 이내 활동 없음
                     status = "idle";  // 💤 대기 중
+                    alert = true;
                     getLogger().log("💤 방에는 있지만 활동 없음");
                 }
+            } else if(isConnected){
+                // ✅ 연결은 되어 있지만 유효한 방이 없음
+                status = "idle";      // 🔴
+                alert = true;         // 개입 필요!
+                getLogger().log("🔴 연결되어 있지만 방 없음 (idle)");
             } else {
-                // 로그아웃 또는 유효하지 않은 방
-                status = "inactive";  // ❌ 비활성
+                // ✅ 로그아웃 상태
+                status = "inactive";  // ⚪
                 lastActive = "5분 전";
-                alert = true;  // 🚨 개입 필요
-                getLogger().log("❌ 비활성 (로그아웃 또는 방 없음)");
+                alert = false;
+                getLogger().log("⚪ 오프라인 (inactive)");
             }
 
             getLogger().log("최종 상태: " + status);
@@ -235,7 +241,7 @@ public class StudentStatusCollector {
                     .email(studentEmail)
                     .name(studentName)
                     .tutorEmail(tutorEmail)
-                    .room(activity)  // "sentence", "ai", or null
+                    .activity(activity)  // "sentence", "ai", or null
                     .status(status)  // "speaking", "listening", "idle", "inactive"
                     .speakingRatio(speakingRatio)
                     .duration(duration)
