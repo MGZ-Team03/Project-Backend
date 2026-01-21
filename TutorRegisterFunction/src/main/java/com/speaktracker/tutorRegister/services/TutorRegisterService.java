@@ -215,11 +215,12 @@ public class TutorRegisterService {
 
         // 5. 트랜잭션으로 관계 생성 + 요청 상태 업데이트
         long now = System.currentTimeMillis();
+        String assignedAt = java.time.Instant.ofEpochMilli(now).toString(); // ISO 8601 형식
         
         TutorStudent relation = new TutorStudent();
         relation.setTutorEmail(tutorEmail);
         relation.setStudentEmail(request.getStudentEmail());
-        relation.setAssignedAt(now);
+        relation.setAssignedAt(assignedAt);
         relation.setStatus("active");
         relation.setRequestId(requestId);
 
@@ -373,5 +374,38 @@ public class TutorRegisterService {
         if (currentStudents >= tutor.getMaxStudents()) {
             throw new CapacityExceededException("튜터의 정원이 가득 찼습니다.");
         }
+    }
+
+    // ===== 알림 관련 =====
+
+    /**
+     * 알림 목록 조회
+     */
+    public NotificationListResponseDto getNotifications(String userEmail, Boolean isReadFilter) {
+        List<Notification> notifications = dynamoDBHelper.getNotificationsByUser(userEmail, isReadFilter);
+        int unreadCount = dynamoDBHelper.getUnreadNotificationCount(userEmail);
+
+        List<NotificationDto> result = new ArrayList<>();
+        for (Notification notification : notifications) {
+            NotificationDto dto = new NotificationDto();
+            dto.setNotificationId(notification.getNotificationId());
+            dto.setType(notification.getType());
+            dto.setTitle(notification.getTitle());
+            dto.setMessage(notification.getMessage());
+            dto.setData(notification.getData());
+            dto.setIsRead(notification.getIsRead());
+            dto.setSentVia(notification.getSentVia());
+            dto.setCreatedAt(notification.getCreatedAt());
+            result.add(dto);
+        }
+
+        return new NotificationListResponseDto(result, unreadCount);
+    }
+
+    /**
+     * 알림 읽음 처리
+     */
+    public void markNotificationAsRead(String userEmail, String notificationIdTimestamp) {
+        dynamoDBHelper.markNotificationAsRead(userEmail, notificationIdTimestamp);
     }
 }

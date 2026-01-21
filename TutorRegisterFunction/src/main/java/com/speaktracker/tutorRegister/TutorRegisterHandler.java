@@ -82,6 +82,20 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
                 String requestId = extractRequestIdFromReject(path);
                 return handleRejectRequest(userEmail, requestId, input.getBody());
             }
+            // 알림 관련 엔드포인트
+            else if (path.equals("/api/notifications") && method.equals("GET")) {
+                // 학생과 튜터 모두 접근 가능
+                Boolean isReadFilter = null;
+                if (input.getQueryStringParameters() != null && input.getQueryStringParameters().containsKey("is_read")) {
+                    isReadFilter = Boolean.parseBoolean(input.getQueryStringParameters().get("is_read"));
+                }
+                return handleGetNotifications(userEmail, isReadFilter);
+            }
+            else if (path.matches("/api/notifications/.+") && method.equals("PATCH")) {
+                // 학생과 튜터 모두 접근 가능
+                String notificationIdTimestamp = extractNotificationId(path);
+                return handleMarkNotificationAsRead(userEmail, notificationIdTimestamp);
+            }
             else {
                 return createResponse(404, ApiResponse.error("NOT_FOUND", "Endpoint not found"));
             }
@@ -134,6 +148,18 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
         
         RequestResponseDto result = tutorRegisterService.rejectRequest(tutorEmail, requestId, reason);
         return createResponse(200, ApiResponse.success(result));
+    }
+
+    private APIGatewayProxyResponseEvent handleGetNotifications(String userEmail, Boolean isReadFilter) {
+        NotificationListResponseDto result = tutorRegisterService.getNotifications(userEmail, isReadFilter);
+        return createResponse(200, ApiResponse.success(result));
+    }
+
+    private APIGatewayProxyResponseEvent handleMarkNotificationAsRead(String userEmail, String notificationIdTimestamp) {
+        tutorRegisterService.markNotificationAsRead(userEmail, notificationIdTimestamp);
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "알림이 읽음 처리되었습니다.");
+        return createResponse(200, ApiResponse.success(response));
     }
 
     // ===== Helper Methods =====
@@ -226,6 +252,12 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
         // /api/tutors/requests/{id}/reject -> id 추출
         String[] parts = path.split("/");
         return parts.length > 4 ? parts[4] : null;
+    }
+
+    private String extractNotificationId(String path) {
+        // /api/notifications/{id} -> id 추출
+        String[] parts = path.split("/");
+        return parts.length > 3 ? parts[3] : null;
     }
 
     private APIGatewayProxyResponseEvent createResponse(int statusCode, ApiResponse<?> body) {

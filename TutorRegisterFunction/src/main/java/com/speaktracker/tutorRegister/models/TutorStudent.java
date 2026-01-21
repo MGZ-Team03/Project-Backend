@@ -6,7 +6,7 @@ package com.speaktracker.tutorRegister.models;
 public class TutorStudent {
     private String tutorEmail;
     private String studentEmail;
-    private Long assignedAt;
+    private String assignedAt; // ISO 8601 DateTime
     private String status; // active, inactive
     private String requestId; // 참조용
 
@@ -27,11 +27,11 @@ public class TutorStudent {
         this.studentEmail = studentEmail;
     }
 
-    public Long getAssignedAt() {
+    public String getAssignedAt() {
         return assignedAt;
     }
 
-    public void setAssignedAt(Long assignedAt) {
+    public void setAssignedAt(String assignedAt) {
         this.assignedAt = assignedAt;
     }
 

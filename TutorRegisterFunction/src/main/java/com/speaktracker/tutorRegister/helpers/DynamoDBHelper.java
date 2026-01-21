@@ -333,7 +333,7 @@ public class DynamoDBHelper {
             Map<String, AttributeValue> relationItem = new HashMap<>();
             relationItem.put("tutor_email", AttributeValue.builder().s(relation.getTutorEmail()).build());
             relationItem.put("student_email", AttributeValue.builder().s(relation.getStudentEmail()).build());
-            relationItem.put("assigned_at", AttributeValue.builder().n(String.valueOf(relation.getAssignedAt())).build());
+            relationItem.put("assigned_at", AttributeValue.builder().s(relation.getAssignedAt()).build());
             relationItem.put("status", AttributeValue.builder().s(relation.getStatus()).build());
             relationItem.put("request_id", AttributeValue.builder().s(relation.getRequestId()).build());
 
@@ -424,22 +424,31 @@ public class DynamoDBHelper {
     private TutorRequest mapToTutorRequest(Map<String, AttributeValue> item) {
         TutorRequest request = new TutorRequest();
         request.setRequestId(item.get("request_id").s());
-        request.setCreatedAt(Long.parseLong(item.get("created_at").n()));
+        
+        // created_at null 체크
+        if (item.containsKey("created_at") && item.get("created_at").n() != null) {
+            request.setCreatedAt(Long.parseLong(item.get("created_at").n()));
+        }
+        
         request.setStudentEmail(item.get("student_email").s());
         request.setTutorEmail(item.get("tutor_email").s());
         request.setStatus(item.get("status").s());
-        request.setUpdatedAt(Long.parseLong(item.get("updated_at").n()));
+        
+        // updated_at null 체크
+        if (item.containsKey("updated_at") && item.get("updated_at").n() != null) {
+            request.setUpdatedAt(Long.parseLong(item.get("updated_at").n()));
+        }
 
         if (item.containsKey("message")) {
             request.setMessage(item.get("message").s());
         }
-        if (item.containsKey("processed_at")) {
+        if (item.containsKey("processed_at") && item.get("processed_at").n() != null) {
             request.setProcessedAt(Long.parseLong(item.get("processed_at").n()));
         }
         if (item.containsKey("rejection_reason")) {
             request.setRejectionReason(item.get("rejection_reason").s());
         }
-        if (item.containsKey("ttl")) {
+        if (item.containsKey("ttl") && item.get("ttl").n() != null) {
             request.setTtl(Long.parseLong(item.get("ttl").n()));
         }
 
@@ -450,7 +459,12 @@ public class DynamoDBHelper {
         TutorStudent relation = new TutorStudent();
         relation.setTutorEmail(item.get("tutor_email").s());
         relation.setStudentEmail(item.get("student_email").s());
-        relation.setAssignedAt(Long.parseLong(item.get("assigned_at").n()));
+        
+        // assigned_at 필드가 존재하고 null이 아닌 경우에만 설정
+        if (item.containsKey("assigned_at") && item.get("assigned_at") != null && item.get("assigned_at").s() != null) {
+            relation.setAssignedAt(item.get("assigned_at").s());
+        }
+        
         relation.setStatus(item.get("status").s());
         
         if (item.containsKey("request_id")) {
@@ -458,5 +472,160 @@ public class DynamoDBHelper {
         }
 
         return relation;
+    }
+
+    private Notification mapToNotification(Map<String, AttributeValue> item) {
+        Notification notification = new Notification();
+        notification.setNotificationId(item.get("notification_id").s());
+        notification.setUserEmail(item.get("user_email").s());
+        notification.setType(item.get("type").s());
+        notification.setTitle(item.get("title").s());
+        notification.setMessage(item.get("message").s());
+        
+        // data (Map 타입)
+        if (item.containsKey("data") && item.get("data").hasM()) {
+            Map<String, Object> data = new HashMap<>();
+            item.get("data").m().forEach((key, value) -> {
+                if (value.s() != null) {
+                    data.put(key, value.s());
+                } else if (value.n() != null) {
+                    data.put(key, value.n());
+                } else if (value.bool() != null) {
+                    data.put(key, value.bool());
+                }
+            });
+            notification.setData(data);
+        }
+        
+        // is_read
+        if (item.containsKey("is_read")) {
+            notification.setIsRead(item.get("is_read").bool());
+        }
+        
+        // sent_via (List 타입)
+        if (item.containsKey("sent_via") && item.get("sent_via").hasSs()) {
+            notification.setSentVia(new ArrayList<>(item.get("sent_via").ss()));
+        }
+        
+        // created_at
+        if (item.containsKey("created_at") && item.get("created_at").n() != null) {
+            notification.setCreatedAt(Long.parseLong(item.get("created_at").n()));
+        }
+        
+        // ttl
+        if (item.containsKey("ttl") && item.get("ttl").n() != null) {
+            notification.setTtl(Long.parseLong(item.get("ttl").n()));
+        }
+
+        return notification;
+    }
+
+    // ===== 알림 관련 =====
+
+    /**
+     * 사용자의 모든 알림 조회 (최신순)
+     */
+    public List<Notification> getNotificationsByUser(String userEmail, Boolean isReadFilter) {
+        try {
+            if (isReadFilter != null) {
+                // GSI를 사용하여 읽음/안읽음 필터링
+                String isReadValue = isReadFilter ? "true" : "false";
+                
+                QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
+                        .tableName(notificationsTable)
+                        .indexName("user_email-is_read-created_at-index")
+                        .keyConditionExpression("user_email = :userEmail AND begins_with(is_read_created_at, :isRead)")
+                        .expressionAttributeValues(Map.of(
+                                ":userEmail", AttributeValue.builder().s(userEmail).build(),
+                                ":isRead", AttributeValue.builder().s(isReadValue).build()
+                        ))
+                        .scanIndexForward(false) // 최신순 정렬 (내림차순)
+                        .build());
+                
+                return response.items().stream()
+                        .map(this::mapToNotification)
+                        .collect(Collectors.toList());
+            } else {
+                // 모든 알림 조회 (PK만 사용)
+                QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
+                        .tableName(notificationsTable)
+                        .keyConditionExpression("user_email = :userEmail")
+                        .expressionAttributeValues(Map.of(
+                                ":userEmail", AttributeValue.builder().s(userEmail).build()
+                        ))
+                        .scanIndexForward(false) // 최신순 정렬
+                        .build());
+                
+                return response.items().stream()
+                        .map(this::mapToNotification)
+                        .collect(Collectors.toList());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get notifications for user: " + userEmail, e);
+        }
+    }
+
+    /**
+     * 알림을 읽음 상태로 변경
+     */
+    public void markNotificationAsRead(String userEmail, String notificationIdTimestamp) {
+        try {
+            // notificationIdTimestamp = "notification_id#timestamp" 형식
+            
+            // 먼저 알림 조회해서 created_at 가져오기
+            GetItemResponse getResponse = dynamoDbClient.getItem(GetItemRequest.builder()
+                    .tableName(notificationsTable)
+                    .key(Map.of(
+                            "user_email", AttributeValue.builder().s(userEmail).build(),
+                            "notification_id_timestamp", AttributeValue.builder().s(notificationIdTimestamp).build()
+                    ))
+                    .build());
+            
+            if (!getResponse.hasItem()) {
+                throw new RuntimeException("Notification not found");
+            }
+            
+            Map<String, AttributeValue> item = getResponse.item();
+            long createdAt = Long.parseLong(item.get("created_at").n());
+            
+            // is_read를 true로 업데이트하고 GSI의 SK도 함께 업데이트
+            dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                    .tableName(notificationsTable)
+                    .key(Map.of(
+                            "user_email", AttributeValue.builder().s(userEmail).build(),
+                            "notification_id_timestamp", AttributeValue.builder().s(notificationIdTimestamp).build()
+                    ))
+                    .updateExpression("SET is_read = :true, is_read_created_at = :newSk")
+                    .expressionAttributeValues(Map.of(
+                            ":true", AttributeValue.builder().bool(true).build(),
+                            ":newSk", AttributeValue.builder().s("true#" + createdAt).build()
+                    ))
+                    .build());
+            
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to mark notification as read: " + notificationIdTimestamp, e);
+        }
+    }
+
+    /**
+     * 안읽은 알림 개수 조회
+     */
+    public int getUnreadNotificationCount(String userEmail) {
+        try {
+            QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
+                    .tableName(notificationsTable)
+                    .indexName("user_email-is_read-created_at-index")
+                    .keyConditionExpression("user_email = :userEmail AND begins_with(is_read_created_at, :isRead)")
+                    .expressionAttributeValues(Map.of(
+                            ":userEmail", AttributeValue.builder().s(userEmail).build(),
+                            ":isRead", AttributeValue.builder().s("false").build()
+                    ))
+                    .select("COUNT")
+                    .build());
+            
+            return response.count();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get unread notification count for user: " + userEmail, e);
+        }
     }
 }
