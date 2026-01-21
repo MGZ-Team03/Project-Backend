@@ -389,13 +389,33 @@ public class DynamoDBHelper {
             user.setSpecialties(item.get("specialties").ss());
         }
         if (item.containsKey("max_students")) {
-            user.setMaxStudents(Integer.parseInt(item.get("max_students").n()));
+            AttributeValue maxStudentsAttr = item.get("max_students");
+            if (maxStudentsAttr.n() != null) {
+                user.setMaxStudents(Integer.parseInt(maxStudentsAttr.n()));
+            }
         }
         if (item.containsKey("is_accepting")) {
             user.setIsAccepting(item.get("is_accepting").bool());
         }
         if (item.containsKey("created_at")) {
-            user.setCreatedAt(Long.parseLong(item.get("created_at").n()));
+            AttributeValue createdAtAttr = item.get("created_at");
+            try {
+                // Number 타입으로 시도
+                if (createdAtAttr.n() != null) {
+                    user.setCreatedAt(Long.parseLong(createdAtAttr.n()));
+                }
+                // String 타입으로 시도 (ISO 8601 또는 timestamp)
+                else if (createdAtAttr.s() != null) {
+                    String createdAtStr = createdAtAttr.s();
+                    // ISO 8601 형식이면 파싱, 아니면 숫자로 파싱 시도
+                    if (createdAtStr.matches("\\d+")) {
+                        user.setCreatedAt(Long.parseLong(createdAtStr));
+                    }
+                    // ISO 8601은 일단 스킵 (필요시 Instant.parse 사용)
+                }
+            } catch (NumberFormatException e) {
+                // created_at 파싱 실패는 무시 (선택적 필드)
+            }
         }
 
         return user;
