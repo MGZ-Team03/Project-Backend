@@ -34,7 +34,7 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         try {
 
             responseBody.put("message", "Hello World cd 테스트 main");
-            responseBody.put("cd!!", "websocket test 260113");
+            responseBody.put("cd!!", "websocket test 260116!!");
 
             return response
                     .withStatusCode(200)
