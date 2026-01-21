@@ -1136,9 +1136,16 @@ Resources:
           Properties:
             RestApiId:
               Ref: MyApi
+            Path: /api/auth/refresh
+            Method: post
+        API5:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
             Path: /api/auth/user
             Method: get
-        API5:
+        API6:
           Type: Api
           Properties:
             RestApiId:

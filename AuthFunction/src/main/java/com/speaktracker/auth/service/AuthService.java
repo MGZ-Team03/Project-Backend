@@ -80,4 +80,22 @@ public class AuthService {
         
         return response;
     }
+    
+    /**
+     * RefreshToken을 사용하여 토큰 갱신
+     * @param refreshToken Refresh Token
+     * @return 새로운 JWT 토큰 정보
+     */
+    public AuthResponse refreshToken(String refreshToken) {
+        TokenInfo tokenInfo = cognitoService.refreshToken(refreshToken);
+        
+        AuthResponse response = new AuthResponse();
+        response.setMessage("토큰 갱신 성공");
+        response.setIdToken(tokenInfo.getIdToken());
+        response.setAccessToken(tokenInfo.getAccessToken());
+        response.setRefreshToken(tokenInfo.getRefreshToken());
+        response.setExpiresIn(tokenInfo.getExpiresIn());
+        
+        return response;
+    }
 }
