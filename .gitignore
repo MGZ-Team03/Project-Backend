@@ -7,8 +7,7 @@ build/
 
 # AWS SAM Specific
 .aws-sam/
-samconfig.toml
-template.yaml
+.cursor
 
 ### STS ###
 .apt_generated
