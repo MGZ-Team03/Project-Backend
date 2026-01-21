@@ -104,7 +104,7 @@ public class DynamoDBHelper {
     }
 
     /**
-     * 튜터 요청 조회
+     * 튜터 요청 조회 (PK + SK)
      */
     public TutorRequest getTutorRequest(String requestId, Long createdAt) {
         try {
@@ -123,6 +123,30 @@ public class DynamoDBHelper {
             return mapToTutorRequest(response.item());
         } catch (Exception e) {
             throw new RuntimeException("Failed to get tutor request", e);
+        }
+    }
+
+    /**
+     * 튜터 요청 조회 (requestId만 사용 - Query로 조회)
+     */
+    public TutorRequest getTutorRequestByRequestId(String requestId) {
+        try {
+            QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
+                    .tableName(tutorRequestsTable)
+                    .keyConditionExpression("request_id = :requestId")
+                    .expressionAttributeValues(Map.of(
+                            ":requestId", AttributeValue.builder().s(requestId).build()
+                    ))
+                    .limit(1)
+                    .build());
+
+            if (response.items().isEmpty()) {
+                return null;
+            }
+
+            return mapToTutorRequest(response.items().get(0));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get tutor request by requestId", e);
         }
     }
 

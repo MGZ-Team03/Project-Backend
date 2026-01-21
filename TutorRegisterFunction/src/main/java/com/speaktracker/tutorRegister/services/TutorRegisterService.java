@@ -189,9 +189,9 @@ public class TutorRegisterService {
     /**
      * 요청 승인
      */
-    public RequestResponseDto approveRequest(String tutorEmail, String requestId, Long createdAt) {
+    public RequestResponseDto approveRequest(String tutorEmail, String requestId) {
         // 1. 요청 조회
-        TutorRequest request = dynamoDBHelper.getTutorRequest(requestId, createdAt);
+        TutorRequest request = dynamoDBHelper.getTutorRequestByRequestId(requestId);
         if (request == null) {
             throw new RequestNotFoundException("요청을 찾을 수 없습니다.");
         }
@@ -223,7 +223,7 @@ public class TutorRegisterService {
         relation.setStatus("active");
         relation.setRequestId(requestId);
 
-        dynamoDBHelper.createTutorStudentRelation(relation, requestId, createdAt, "approved");
+        dynamoDBHelper.createTutorStudentRelation(relation, requestId, request.getCreatedAt(), "approved");
 
         // 6. 병렬 알림 전송
         User student = dynamoDBHelper.getUserByEmail(request.getStudentEmail());
@@ -257,9 +257,9 @@ public class TutorRegisterService {
     /**
      * 요청 거부
      */
-    public RequestResponseDto rejectRequest(String tutorEmail, String requestId, Long createdAt, String reason) {
+    public RequestResponseDto rejectRequest(String tutorEmail, String requestId, String reason) {
         // 1. 요청 조회
-        TutorRequest request = dynamoDBHelper.getTutorRequest(requestId, createdAt);
+        TutorRequest request = dynamoDBHelper.getTutorRequestByRequestId(requestId);
         if (request == null) {
             throw new RequestNotFoundException("요청을 찾을 수 없습니다.");
         }
@@ -276,7 +276,7 @@ public class TutorRegisterService {
 
         // 4. 요청 상태 업데이트
         long now = System.currentTimeMillis();
-        dynamoDBHelper.updateTutorRequestStatus(requestId, createdAt, "rejected", now, reason);
+        dynamoDBHelper.updateTutorRequestStatus(requestId, request.getCreatedAt(), "rejected", now, reason);
 
         // 5. 병렬 알림 전송
         User tutor = dynamoDBHelper.getUserByEmail(tutorEmail);
@@ -312,9 +312,9 @@ public class TutorRegisterService {
     /**
      * 요청 취소 (학생용)
      */
-    public RequestResponseDto cancelRequest(String studentEmail, String requestId, Long createdAt) {
+    public RequestResponseDto cancelRequest(String studentEmail, String requestId) {
         // 1. 요청 조회
-        TutorRequest request = dynamoDBHelper.getTutorRequest(requestId, createdAt);
+        TutorRequest request = dynamoDBHelper.getTutorRequestByRequestId(requestId);
         if (request == null) {
             throw new RequestNotFoundException("요청을 찾을 수 없습니다.");
         }
@@ -331,7 +331,7 @@ public class TutorRegisterService {
 
         // 4. 요청 상태 업데이트
         long now = System.currentTimeMillis();
-        dynamoDBHelper.updateTutorRequestStatus(requestId, createdAt, "cancelled", now, null);
+        dynamoDBHelper.updateTutorRequestStatus(requestId, request.getCreatedAt(), "cancelled", now, null);
 
         // 5. 응답 생성
         RequestResponseDto response = new RequestResponseDto();

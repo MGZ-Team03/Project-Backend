@@ -36,9 +36,12 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
 
         try {
             // Cognito에서 사용자 이메일 추출
-            String userEmail = getUserEmailFromCognito(input);
+            String userEmail = getUserEmailFromCognito(input, context);
+            context.getLogger().log("User email: " + userEmail);
+            
             // DynamoDB에서 role 조회
-            String userRole = getUserRole(userEmail);
+            String userRole = getUserRole(userEmail, context);
+            context.getLogger().log("User role: " + userRole);
             
             // 라우팅
             if (path.equals("/api/tutors") && method.equals("GET")) {
@@ -85,6 +88,7 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
 
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
+            e.printStackTrace();
             return handleError(e);
         }
     }
@@ -110,9 +114,7 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
     }
 
     private APIGatewayProxyResponseEvent handleCancelRequest(String studentEmail, String requestId) {
-        // requestId에서 createdAt 추출 (실제로는 요청 본문이나 쿼리에서 받아야 함)
-        // 간단한 구현을 위해 여기서는 임시로 처리
-        RequestResponseDto result = tutorRegisterService.cancelRequest(studentEmail, requestId, 0L);
+        RequestResponseDto result = tutorRegisterService.cancelRequest(studentEmail, requestId);
         return createResponse(200, ApiResponse.success(result));
     }
 
@@ -122,8 +124,7 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
     }
 
     private APIGatewayProxyResponseEvent handleApproveRequest(String tutorEmail, String requestId) {
-        // requestId에서 createdAt 추출 필요
-        RequestResponseDto result = tutorRegisterService.approveRequest(tutorEmail, requestId, 0L);
+        RequestResponseDto result = tutorRegisterService.approveRequest(tutorEmail, requestId);
         return createResponse(200, ApiResponse.success(result));
     }
 
@@ -131,32 +132,61 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
         Map<String, String> requestBody = gson.fromJson(body, Map.class);
         String reason = requestBody != null ? requestBody.get("reason") : null;
         
-        RequestResponseDto result = tutorRegisterService.rejectRequest(tutorEmail, requestId, 0L, reason);
+        RequestResponseDto result = tutorRegisterService.rejectRequest(tutorEmail, requestId, reason);
         return createResponse(200, ApiResponse.success(result));
     }
 
     // ===== Helper Methods =====
 
-    private String getUserEmailFromCognito(APIGatewayProxyRequestEvent input) {
+    private String getUserEmailFromCognito(APIGatewayProxyRequestEvent input, Context context) {
         // Cognito Authorizer에서 사용자 정보 추출
-        Map<String, Object> authorizer = input.getRequestContext().getAuthorizer();
-        if (authorizer != null && authorizer.containsKey("claims")) {
-            Map<String, String> claims = (Map<String, String>) authorizer.get("claims");
-            return claims.get("email");
+        try {
+            if (input == null || input.getRequestContext() == null) {
+                context.getLogger().log("Missing requestContext");
+                return "test@example.com";
+            }
+
+            Map<String, Object> authorizer = input.getRequestContext().getAuthorizer();
+            if (authorizer == null) {
+                context.getLogger().log("Missing authorizer");
+                return "test@example.com";
+            }
+
+            Object claimsObj = authorizer.get("claims");
+            if (!(claimsObj instanceof Map)) {
+                context.getLogger().log("Missing claims in authorizer");
+                return "test@example.com";
+            }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> claims = (Map<String, Object>) claimsObj;
+            
+            Object emailObj = claims.get("email");
+            if (emailObj != null) {
+                return emailObj.toString();
+            }
+            
+            context.getLogger().log("Email not found in claims");
+        } catch (Exception e) {
+            context.getLogger().log("Error extracting email from Cognito: " + e.getMessage());
         }
+        
         // 테스트를 위한 기본값
+        context.getLogger().log("Using default test email");
         return "test@example.com";
     }
 
-    private String getUserRole(String userEmail) {
+    private String getUserRole(String userEmail, Context context) {
         // DynamoDB users 테이블에서 role 조회
         try {
             com.speaktracker.tutorRegister.models.User user = tutorRegisterService.getDynamoDBHelper().getUserByEmail(userEmail);
             if (user != null && user.getRole() != null) {
                 return user.getRole();
             }
+            context.getLogger().log("User not found or role is null for email: " + userEmail);
         } catch (Exception e) {
-            // 조회 실패 시 기본값 반환
+            context.getLogger().log("Error getting user role: " + e.getMessage());
+            e.printStackTrace();
         }
         // 기본값: student
         return "student";
