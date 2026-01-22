@@ -62,6 +62,12 @@ public class TutorRegisterService {
                 TutorStudent relation = dynamoDBHelper.getTutorStudentRelation(tutor.getEmail(), studentEmail);
                 if (relation != null && "active".equals(relation.getStatus())) {
                     myRequestStatus = "registered";
+                } else {
+                    // 거부된 이력 확인
+                    TutorRequest rejectedRequest = dynamoDBHelper.getRejectedRequestByStudent(studentEmail, tutor.getEmail());
+                    if (rejectedRequest != null) {
+                        myRequestStatus = "rejected";
+                    }
                 }
             }
             tutorInfo.setMyRequestStatus(myRequestStatus);
@@ -107,7 +113,7 @@ public class TutorRegisterService {
 
         // SQS 큐잉
         sqsHelper.queueNewTutorRequestNotification(
-                tutorEmail, tutor.getName(), student.getName(), requestId
+                tutorEmail, tutor.getName(), studentEmail, student.getName(), message, requestId
         );
 
         // 이메일 알림
@@ -361,6 +367,12 @@ public class TutorRegisterService {
         TutorRequest existingRequest = dynamoDBHelper.getPendingRequestByStudent(studentEmail, tutorEmail);
         if (existingRequest != null) {
             throw new DuplicateRequestException("이미 해당 튜터에게 pending 요청이 있습니다.");
+        }
+
+        // 3-1. 거부된 이력 확인 (영구 차단)
+        TutorRequest rejectedRequest = dynamoDBHelper.getRejectedRequestByStudent(studentEmail, tutorEmail);
+        if (rejectedRequest != null) {
+            throw new RequestPreviouslyRejectedException("해당 튜터에게 거부된 이력이 있어 요청할 수 없습니다.");
         }
 
         // 4. 이미 등록된 학생인지 확인

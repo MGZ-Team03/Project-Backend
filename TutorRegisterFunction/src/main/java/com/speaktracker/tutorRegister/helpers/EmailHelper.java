@@ -68,7 +68,7 @@ public class EmailHelper {
                 "%s님이 튜터 등록 요청을 보냈습니다.\n\n" +
                 "요청 메시지:\n\"%s\"\n\n" +
                 "대시보드에서 요청을 확인하고 승인/거부할 수 있습니다.\n" +
-                "→ %s/tutor/requests\n\n" +
+                "→ %s/tutor/dashboard\n\n" +
                 "감사합니다.\n" +
                 "SpeakTracker 팀",
                 tutorName, studentName, message != null ? message : "", frontendUrl
@@ -81,7 +81,7 @@ public class EmailHelper {
                 "<p><strong>요청 메시지:</strong></p>" +
                 "<blockquote>%s</blockquote>" +
                 "<p>대시보드에서 요청을 확인하고 승인/거부할 수 있습니다.</p>" +
-                "<p><a href=\"%s/tutor/requests\" style=\"background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;\">대시보드 확인하기</a></p>" +
+                "<p><a href=\"%s/tutor/dashboard\" style=\"background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;\">대시보드 확인하기</a></p>" +
                 "<p>감사합니다.<br>SpeakTracker 팀</p>" +
                 "</body></html>",
                 tutorName, studentName, message != null ? message : "", frontendUrl

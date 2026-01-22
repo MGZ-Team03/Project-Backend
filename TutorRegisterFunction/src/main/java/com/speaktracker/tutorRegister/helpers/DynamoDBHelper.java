@@ -80,6 +80,12 @@ public class DynamoDBHelper {
      */
     public void createTutorRequest(TutorRequest request) {
         try {
+            System.out.println("DEBUG: createTutorRequest - request_id=" + request.getRequestId() + 
+                             ", student=" + request.getStudentEmail() + 
+                             ", tutor=" + request.getTutorEmail() + 
+                             ", status=" + request.getStatus() + 
+                             ", tutor_email_status=" + request.getTutorEmailStatus());
+            
             Map<String, AttributeValue> item = new HashMap<>();
             item.put("request_id", AttributeValue.builder().s(request.getRequestId()).build());
             item.put("created_at", AttributeValue.builder().n(String.valueOf(request.getCreatedAt())).build());
@@ -98,7 +104,11 @@ public class DynamoDBHelper {
                     .tableName(tutorRequestsTable)
                     .item(item)
                     .build());
+                    
+            System.out.println("DEBUG: Request created successfully");
         } catch (Exception e) {
+            System.err.println("ERROR creating tutor request: " + e.getMessage());
+            e.printStackTrace();
             throw new RuntimeException("Failed to create tutor request", e);
         }
     }
@@ -155,6 +165,8 @@ public class DynamoDBHelper {
      */
     public TutorRequest getPendingRequestByStudent(String studentEmail, String tutorEmail) {
         try {
+            System.out.println("DEBUG: getPendingRequestByStudent - studentEmail=" + studentEmail + ", tutorEmail=" + tutorEmail);
+            
             QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
                     .tableName(tutorRequestsTable)
                     .indexName("student_email-created_at-index")
@@ -169,13 +181,58 @@ public class DynamoDBHelper {
                     .limit(1)
                     .build());
 
+            System.out.println("DEBUG: Query returned " + response.items().size() + " items");
+            if (!response.items().isEmpty()) {
+                Map<String, AttributeValue> item = response.items().get(0);
+                System.out.println("DEBUG: Found - request_id=" + item.get("request_id").s() + 
+                                 ", status=" + item.get("status").s() + 
+                                 ", created_at=" + item.get("created_at").n());
+            }
+
             if (response.items().isEmpty()) {
                 return null;
             }
 
             return mapToTutorRequest(response.items().get(0));
         } catch (Exception e) {
+            System.err.println("ERROR in getPendingRequestByStudent: " + e.getMessage());
+            e.printStackTrace();
             throw new RuntimeException("Failed to check pending request", e);
+        }
+    }
+
+    /**
+     * 학생의 거부된 요청 확인 (영구 차단용)
+     */
+    public TutorRequest getRejectedRequestByStudent(String studentEmail, String tutorEmail) {
+        try {
+            System.out.println("DEBUG: getRejectedRequestByStudent - studentEmail=" + studentEmail + ", tutorEmail=" + tutorEmail);
+            
+            QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
+                    .tableName(tutorRequestsTable)
+                    .indexName("student_email-created_at-index")
+                    .keyConditionExpression("student_email = :email")
+                    .filterExpression("tutor_email = :tutor AND #status = :rejected")
+                    .expressionAttributeNames(Map.of("#status", "status"))
+                    .expressionAttributeValues(Map.of(
+                            ":email", AttributeValue.builder().s(studentEmail).build(),
+                            ":tutor", AttributeValue.builder().s(tutorEmail).build(),
+                            ":rejected", AttributeValue.builder().s("rejected").build()
+                    ))
+                    .limit(1)
+                    .build());
+
+            System.out.println("DEBUG: Rejected request check - found " + response.items().size() + " items");
+
+            if (response.items().isEmpty()) {
+                return null;
+            }
+
+            return mapToTutorRequest(response.items().get(0));
+        } catch (Exception e) {
+            System.err.println("ERROR in getRejectedRequestByStudent: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to check rejected request", e);
         }
     }
 
@@ -246,17 +303,26 @@ public class DynamoDBHelper {
     public void updateTutorRequestStatus(String requestId, Long createdAt, String status, 
                                           Long processedAt, String rejectionReason) {
         try {
+            // 먼저 기존 요청을 조회하여 tutorEmail을 가져옴
+            TutorRequest existingRequest = getTutorRequest(requestId, createdAt);
+            if (existingRequest == null) {
+                throw new RuntimeException("Request not found: " + requestId);
+            }
+            
+            String newTutorEmailStatus = existingRequest.getTutorEmail() + "#" + status;
+            
             Map<String, AttributeValue> key = Map.of(
                     "request_id", AttributeValue.builder().s(requestId).build(),
                     "created_at", AttributeValue.builder().n(String.valueOf(createdAt)).build()
             );
 
-            StringBuilder updateExpression = new StringBuilder("SET #status = :status, processed_at = :processedAt, updated_at = :updatedAt");
+            StringBuilder updateExpression = new StringBuilder("SET #status = :status, tutor_email_status = :tutorEmailStatus, processed_at = :processedAt, updated_at = :updatedAt");
             Map<String, String> attributeNames = new HashMap<>();
             attributeNames.put("#status", "status");
 
             Map<String, AttributeValue> attributeValues = new HashMap<>();
             attributeValues.put(":status", AttributeValue.builder().s(status).build());
+            attributeValues.put(":tutorEmailStatus", AttributeValue.builder().s(newTutorEmailStatus).build());
             attributeValues.put(":processedAt", AttributeValue.builder().n(String.valueOf(processedAt)).build());
             attributeValues.put(":updatedAt", AttributeValue.builder().n(String.valueOf(System.currentTimeMillis())).build());
 

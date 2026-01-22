@@ -4,7 +4,9 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
-import com.google.gson.Gson;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.speaktracker.tutorRegister.models.ApiResponse;
 import com.speaktracker.tutorRegister.services.TutorRegisterService;
 import com.speaktracker.tutorRegister.dto.*;
@@ -20,11 +22,12 @@ import java.util.Map;
 public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
     private final TutorRegisterService tutorRegisterService;
-    private final Gson gson;
+    private final ObjectMapper objectMapper;
 
     public TutorRegisterHandler() {
         this.tutorRegisterService = new TutorRegisterService();
-        this.gson = new Gson();
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.setSerializationInclusion(JsonInclude.Include.ALWAYS);
     }
 
     @Override
@@ -91,7 +94,7 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
                 }
                 return handleGetNotifications(userEmail, isReadFilter);
             }
-            else if (path.matches("/api/notifications/.+") && method.equals("PATCH")) {
+            else if (path.matches("/api/notifications/.+") && method.equals("PUT")) {
                 // 학생과 튜터 모두 접근 가능
                 String notificationIdTimestamp = extractNotificationId(path);
                 return handleMarkNotificationAsRead(userEmail, notificationIdTimestamp);
@@ -115,11 +118,15 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
     }
 
     private APIGatewayProxyResponseEvent handleCreateRequest(String studentEmail, String tutorEmail, String body) {
-        Map<String, String> requestBody = gson.fromJson(body, Map.class);
-        String message = requestBody != null ? requestBody.get("message") : null;
-        
-        RequestResponseDto result = tutorRegisterService.createTutorRequest(studentEmail, tutorEmail, message);
-        return createResponse(201, ApiResponse.success(result));
+        try {
+            Map<String, String> requestBody = objectMapper.readValue(body, new TypeReference<Map<String, String>>() {});
+            String message = requestBody != null ? requestBody.get("message") : null;
+            
+            RequestResponseDto result = tutorRegisterService.createTutorRequest(studentEmail, tutorEmail, message);
+            return createResponse(201, ApiResponse.success(result));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse request body", e);
+        }
     }
 
     private APIGatewayProxyResponseEvent handleGetMyRequests(String studentEmail, String status) {
@@ -143,11 +150,15 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
     }
 
     private APIGatewayProxyResponseEvent handleRejectRequest(String tutorEmail, String requestId, String body) {
-        Map<String, String> requestBody = gson.fromJson(body, Map.class);
-        String reason = requestBody != null ? requestBody.get("reason") : null;
-        
-        RequestResponseDto result = tutorRegisterService.rejectRequest(tutorEmail, requestId, reason);
-        return createResponse(200, ApiResponse.success(result));
+        try {
+            Map<String, String> requestBody = objectMapper.readValue(body, new TypeReference<Map<String, String>>() {});
+            String reason = requestBody != null ? requestBody.get("reason") : null;
+            
+            RequestResponseDto result = tutorRegisterService.rejectRequest(tutorEmail, requestId, reason);
+            return createResponse(200, ApiResponse.success(result));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse request body", e);
+        }
     }
 
     private APIGatewayProxyResponseEvent handleGetNotifications(String userEmail, Boolean isReadFilter) {
@@ -261,16 +272,20 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
     }
 
     private APIGatewayProxyResponseEvent createResponse(int statusCode, ApiResponse<?> body) {
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Content-Type", "application/json");
-        headers.put("Access-Control-Allow-Origin", "*");
-        headers.put("Access-Control-Allow-Headers", "Content-Type,Authorization");
-        headers.put("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+        try {
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Content-Type", "application/json");
+            headers.put("Access-Control-Allow-Origin", "*");
+            headers.put("Access-Control-Allow-Headers", "Content-Type,Authorization");
+            headers.put("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
 
-        return new APIGatewayProxyResponseEvent()
-                .withStatusCode(statusCode)
-                .withHeaders(headers)
-                .withBody(gson.toJson(body));
+            return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(statusCode)
+                    .withHeaders(headers)
+                    .withBody(objectMapper.writeValueAsString(body));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize response", e);
+        }
     }
 
     private APIGatewayProxyResponseEvent handleError(Exception e) {

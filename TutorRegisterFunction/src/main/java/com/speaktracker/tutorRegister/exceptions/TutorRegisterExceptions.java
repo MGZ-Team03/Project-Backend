@@ -80,4 +80,10 @@ public class TutorRegisterExceptions {
             super("CANNOT_CANCEL", message);
         }
     }
+
+    public static class RequestPreviouslyRejectedException extends TutorRegisterException {
+        public RequestPreviouslyRejectedException(String message) {
+            super("REQUEST_PREVIOUSLY_REJECTED", message);
+        }
+    }
 }

@@ -1,6 +1,6 @@
 package com.speaktracker.tutorRegister.helpers;
 
-import com.google.gson.Gson;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
@@ -13,14 +13,14 @@ import java.util.*;
 public class SQSHelper {
     private final SqsClient sqsClient;
     private final String queueUrl;
-    private final Gson gson;
+    private final ObjectMapper objectMapper;
 
     public SQSHelper() {
         this.sqsClient = SqsClient.builder()
                 .region(Region.AP_NORTHEAST_2)
                 .build();
         this.queueUrl = System.getenv("NOTIFICATION_QUEUE_URL");
-        this.gson = new Gson();
+        this.objectMapper = new ObjectMapper();
     }
 
     /**
@@ -41,7 +41,7 @@ public class SQSHelper {
             notificationMessage.put("sent_via", sentVia);
             notificationMessage.put("created_at", System.currentTimeMillis());
 
-            String messageBody = gson.toJson(notificationMessage);
+            String messageBody = objectMapper.writeValueAsString(notificationMessage);
 
             sqsClient.sendMessage(SendMessageRequest.builder()
                     .queueUrl(queueUrl)
@@ -59,10 +59,13 @@ public class SQSHelper {
      * 새 튜터 요청 알림 메시지
      */
     public void queueNewTutorRequestNotification(String tutorEmail, String tutorName, 
-                                                  String studentName, String requestId) {
+                                                  String studentEmail, String studentName, 
+                                                  String message, String requestId) {
         Map<String, Object> data = new HashMap<>();
         data.put("request_id", requestId);
+        data.put("student_email", studentEmail);
         data.put("student_name", studentName);
+        data.put("message", message);
 
         sendNotificationMessage(
                 tutorEmail,

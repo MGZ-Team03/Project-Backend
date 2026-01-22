@@ -5,6 +5,14 @@ Description: 'Project02-SpeakTracker
   Sample SAM Template for Project02-SpeakTracker
 
   '
+Parameters:
+  SesSenderEmail:
+    Type: String
+    Description: Verified email address for sending SES emails
+  FrontendUrl:
+    Type: String
+    Description: Frontend application URL
+
 Globals:
   Function:
     Timeout: 30
@@ -175,6 +183,15 @@ Resources:
                   - dynamodb:UpdateItem
                 Resource:
                   - !GetAtt AsyncJobStatusTable.Arn
+        - PolicyName: SESEmailSend
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: '*'
 
   # WebSocket 전용 Role
   WebSocketLambdaRole:
@@ -1462,8 +1479,8 @@ Resources:
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
           WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
           NOTIFICATION_QUEUE_URL: !Ref NotificationQueue
-          SES_SENDER_EMAIL: noreply@speaktracker.com
-          FRONTEND_URL: https://app.speaktracker.com
+          SES_SENDER_EMAIL: !Ref SesSenderEmail
+          FRONTEND_URL: !Ref FrontendUrl
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -1563,6 +1580,31 @@ Resources:
             TableName: !Ref NotificationsTable
         - SQSPollerPolicy:
             QueueName: !GetAtt NotificationQueue.QueueName
+
+  # 알림 조회 API Lambda
+  NotificationQueryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: NotificationPersistenceFunction
+      Handler: com.speaktracker.notificationpersistence.NotificationQueryHandler::handleRequest
+      Runtime: java21
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          NOTIFICATIONS_TABLE: !Ref NotificationsTable
+      Events:
+        GetNotifications:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /api/notifications
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref NotificationsTable
 
   # DLQ 모니터링 알람
   FeedbackDLQAlarm:

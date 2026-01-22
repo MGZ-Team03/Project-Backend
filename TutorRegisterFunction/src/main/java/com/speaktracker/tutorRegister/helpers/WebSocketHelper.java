@@ -1,6 +1,6 @@
 package com.speaktracker.tutorRegister.helpers;
 
-import com.google.gson.Gson;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient;
@@ -24,7 +24,7 @@ public class WebSocketHelper {
     private final ApiGatewayManagementApiClient apiGatewayClient;
     private final DynamoDbClient dynamoDbClient;
     private final String connectionsTable;
-    private final Gson gson;
+    private final ObjectMapper objectMapper;
 
     public WebSocketHelper() {
         String websocketEndpoint = System.getenv("WEBSOCKET_API_ENDPOINT");
@@ -39,11 +39,11 @@ public class WebSocketHelper {
                 .build();
         
         this.connectionsTable = System.getenv("CONNECTIONS_TABLE");
-        this.gson = new Gson();
+        this.objectMapper = new ObjectMapper();
     }
 
     /**
-     * 사용자의 활성 WebSocket 연결 조회
+     * 사용자의 활성 WebSocket 연결 조회 (최신 연결만)
      */
     private List<String> getActiveConnections(String userEmail) {
         try {
@@ -56,13 +56,26 @@ public class WebSocketHelper {
                     ))
                     .build());
 
-            List<String> connectionIds = new ArrayList<>();
-            for (Map<String, AttributeValue> item : response.items()) {
-                connectionIds.add(item.get("connection_id").s());
+            if (response.items().isEmpty()) {
+                return new ArrayList<>();
             }
 
-            return connectionIds;
+            // connected_at 기준으로 최신 연결만 선택
+            String latestConnectionId = response.items().stream()
+                .filter(item -> item.containsKey("connected_at"))
+                .max((a, b) -> {
+                    String timeA = a.get("connected_at").s();
+                    String timeB = b.get("connected_at").s();
+                    return timeA.compareTo(timeB);
+                })
+                .map(item -> item.get("connection_id").s())
+                .orElse(response.items().get(0).get("connection_id").s());
+            
+            return List.of(latestConnectionId);
+
         } catch (Exception e) {
+            System.err.println("❌ Failed to get active connections for user: " + userEmail);
+            e.printStackTrace();
             throw new RuntimeException("Failed to get active connections for user: " + userEmail, e);
         }
     }
@@ -75,7 +88,6 @@ public class WebSocketHelper {
             List<String> connectionIds = getActiveConnections(userEmail);
             
             if (connectionIds.isEmpty()) {
-                System.out.println("No active WebSocket connections for user: " + userEmail);
                 return false;
             }
 
@@ -83,7 +95,7 @@ public class WebSocketHelper {
             message.put("type", type);
             message.put("data", data);
             
-            String messageJson = gson.toJson(message);
+            String messageJson = objectMapper.writeValueAsString(message);
             byte[] messageBytes = messageJson.getBytes();
 
             boolean sentToAtLeastOne = false;
@@ -95,19 +107,19 @@ public class WebSocketHelper {
                             .data(SdkBytes.fromByteArray(messageBytes))
                             .build());
                     
-                    System.out.println("Sent notification to connection: " + connectionId);
                     sentToAtLeastOne = true;
                 } catch (GoneException e) {
                     // 연결이 끊어진 경우 - 무시 (TTL이 자동으로 정리)
-                    System.out.println("Connection gone: " + connectionId);
                 } catch (Exception e) {
-                    System.err.println("Failed to send to connection " + connectionId + ": " + e.getMessage());
+                    System.err.println("❌ Failed to send to connection " + connectionId + ": " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
-
+            
             return sentToAtLeastOne;
         } catch (Exception e) {
-            System.err.println("Failed to send WebSocket notification: " + e.getMessage());
+            System.err.println("❌ Failed to send WebSocket notification: " + e.getMessage());
+            e.printStackTrace();
             return false;
         }
     }
