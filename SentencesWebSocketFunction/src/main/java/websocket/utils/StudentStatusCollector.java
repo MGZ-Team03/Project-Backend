@@ -6,6 +6,7 @@ import software.amazon.awssdk.services.dynamodb.model.*;
 import websocket.dto.dashboard.DashboardUpdateDto;
 import websocket.dto.dashboard.StudentStatusDto;
 
+import javax.management.Query;
 import java.time.Instant;
 import java.util.*;
 
@@ -139,21 +140,19 @@ public class StudentStatusCollector {
         }
     }
 
-
-
-
     private List<Map<String, AttributeValue>> getStudentsByTutor(String tutorEmail) {
         try {
             Map<String, AttributeValue> expressionValues = new HashMap<>();
             expressionValues.put(":tutorEmail", AttributeValue.builder().s(tutorEmail).build());
 
-            ScanRequest scanRequest = ScanRequest.builder()
+            QueryRequest request = QueryRequest.builder()
                     .tableName(tutorStudentTable)
-                    .filterExpression("tutor_email = :tutorEmail")
+                    .keyConditionExpression("tutor_email = :tutorEmail")
                     .expressionAttributeValues(expressionValues)
                     .build();
-            ScanResponse response = dynamoDbClient.scan(scanRequest);
-            return response.items();
+
+            getLogger().log("getStudentByTutor.qeury result : " + dynamoDbClient.query(request).items());
+            return dynamoDbClient.query(request).items();
         } catch (Exception e) {
             getLogger().log("⚠️ 튜터별 학생 조회 실패: " + e.getMessage());
             return List.of();
@@ -233,7 +232,7 @@ public class StudentStatusCollector {
                 alert = false;
                 getLogger().log("⚪ 오프라인 (inactive)");
             }
-
+            getLogger().log("activity: " + activity);
             getLogger().log("최종 상태: " + status);
             getLogger().log("========================================");
 

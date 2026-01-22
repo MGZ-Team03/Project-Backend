@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "project02-speaktracker-hwkang"
+stack_name = "Project02-speaktracker-acw"
 region = "ap-northeast-2"
 
 [default.build.parameters]
@@ -14,11 +14,12 @@ parallel = true
 lint = true
 
 [default.deploy.parameters]
-capabilities = ["CAPABILITY_NAMED_IAM", "CAPABILITY_IAM"]
+capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-s3_prefix = "project02-speaktracker-hwkang"
+s3_prefix = "Project02-SpeakTracker-acw-v2"
 image_repositories = []
+stack_name = "Project02-SpeakTracker-acw-v2"
 
 [default.package.parameters]
 resolve_s3 = true
@@ -33,11 +34,11 @@ warm_containers = "EAGER"
 warm_containers = "EAGER"
 
 [personal.deploy.parameters]
-stack_name = "Project02-SpeakTracker-acw-personal"
+stack_name = "Project02-SpeakTracker-acw"
 resolve_s3 = true
-s3_prefix = "Project02-SpeakTracker-acw-personal"
+s3_prefix = "Project02-SpeakTracker-acw"
 region = "ap-northeast-2"
-capabilities = "CAPABILITY_IAM"
+capabilities = "CAPABILITY_NAMED_IAM"
 image_repositories = []
 
 [personal.global.parameters]

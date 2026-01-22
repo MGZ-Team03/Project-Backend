@@ -130,36 +130,7 @@ Resources:
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
                   - !Sub '${SentencesTable.Arn}/index/*'
-        - PolicyName: WebSocketManageConnections
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'execute-api:ManageConnections'
-                Resource:
-                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-        - PolicyName: SQSSendMessage
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'sqs:SendMessage'
-                  - 'sqs:GetQueueUrl'
-                Resource:
-                  - !GetAtt FeedbackQueue.Arn
-        - PolicyName: SecretsManagerReadClaudeKey
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - secretsmanager:GetSecretValue
-                Resource:
-                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:team3/claude_api_key*'
-        # ✅ 수정: 두 개의 SQSAccess 정책을 하나로 통합
-        - PolicyName: SQSFullAccess
+        - PolicyName: SQSAccess # sqs 권한추가
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -169,21 +140,7 @@ Resources:
                   - sqs:ReceiveMessage
                   - sqs:DeleteMessage
                   - sqs:GetQueueAttributes
-                  - sqs:GetQueueUrl
-                Resource:
-                  - !GetAtt AIConversationQueue.Arn
-                  - !GetAtt DashboardQueue.Arn
-        - PolicyName: JobStatusTableAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                  - dynamodb:GetItem
-                  - dynamodb:UpdateItem
-                Resource:
-                  - !GetAtt AsyncJobStatusTable.Arn
+                Resource: !GetAtt DashboardQueue.Arn
 
   # WebSocket 전용 Role
   WebSocketLambdaRole:
@@ -247,6 +204,8 @@ Resources:
   # 1. Users 테이블
   UsersTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-users'
       BillingMode: PAY_PER_REQUEST
@@ -290,6 +249,8 @@ Resources:
   # 3. Learning Sessions 테이블
   LearningSessionsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-learning-sessions'
       BillingMode: PAY_PER_REQUEST
@@ -324,6 +285,8 @@ Resources:
   # 4. Daily Statistics 테이블
   DailyStatisticsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-daily-statistics'
       BillingMode: PAY_PER_REQUEST
@@ -344,6 +307,8 @@ Resources:
   # 5. AI Conversations 테이블
   AIConversationsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-ai-conversations'
       BillingMode: PAY_PER_REQUEST
@@ -352,20 +317,11 @@ Resources:
           AttributeType: S
         - AttributeName: timestamp
           AttributeType: S
-        - AttributeName: conversation_id
-          AttributeType: S
       KeySchema:
         - AttributeName: student_email
           KeyType: HASH
         - AttributeName: timestamp
           KeyType: RANGE
-      GlobalSecondaryIndexes:
-        - IndexName: conversation_id-index
-          KeySchema:
-            - AttributeName: conversation_id
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
       TimeToLiveSpecification:
         AttributeName: ttl
         Enabled: true
@@ -524,284 +480,6 @@ Resources:
       SamResourceId: DashboardDataGeneratorFunction
 
 
-  # 9. Async Job Status 테이블 (SQS 비동기 작업 상태 추적)
-  AsyncJobStatusTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub '${AWS::StackName}-async-job-status'
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: job_id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: job_id
-          KeyType: HASH
-      TimeToLiveSpecification:
-        AttributeName: ttl
-        Enabled: true
-      Tags:
-        - Key: Name
-          Value: Async Job Status Table
-
-  # 10. Pronunciation Results 테이블
-  PronunciationResultsTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      TableName: !Sub '${AWS::StackName}-pronunciation-results'
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: student_email
-          AttributeType: S
-        - AttributeName: timestamp
-          AttributeType: S
-      KeySchema:
-        - AttributeName: student_email
-          KeyType: HASH
-        - AttributeName: timestamp
-          KeyType: RANGE
-      TimeToLiveSpecification:
-        AttributeName: ttl
-        Enabled: true
-      Tags:
-        - Key: Name
-          Value: Pronunciation Results Table
-
-  # Transcribe Temporary Audio S3 Bucket
-  TranscribeTempBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      BucketName: !Sub '${AWS::StackName}-transcribe-temp'
-      LifecycleConfiguration:
-        Rules:
-          - Id: DeleteOldAudioFiles
-            Status: Enabled
-            ExpirationInDays: 1
-      Tags:
-        - Key: Name
-          Value: Transcribe Temporary Audio Bucket
-
-  # SQS Queues for async processing
-  # TTS Queue
-  TTSQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-tts-queue'
-      VisibilityTimeout: 120
-      MessageRetentionPeriod: 3600
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt TTSDeadLetterQueue.Arn
-        maxReceiveCount: 3
-
-  TTSDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-tts-dlq'
-      MessageRetentionPeriod: 1209600
-
-  # AI Conversation Queue (FIFO)
-  AIConversationQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-ai-conversation-queue.fifo'
-      FifoQueue: true
-      ContentBasedDeduplication: true
-      VisibilityTimeout: 120
-      MessageRetentionPeriod: 3600
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt AIConversationDeadLetterQueue.Arn
-        maxReceiveCount: 3
-
-  AIConversationDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-ai-conversation-dlq.fifo'
-      FifoQueue: true
-      MessageRetentionPeriod: 1209600
-
-  # TTS Audio S3 Bucket
-  TTSBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      CorsConfiguration:
-        CorsRules:
-          - AllowedHeaders:
-              - '*'
-            AllowedMethods:
-              - GET
-              - HEAD
-            AllowedOrigins:
-              - '*'
-            MaxAge: 3600
-      LifecycleConfiguration:
-        Rules:
-          - Id: DeleteOldAudioFiles
-            Status: Enabled
-            ExpirationInDays: 30
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      Tags:
-        - Key: Name
-          Value: TTS Audio Bucket
-
-  # TTS Lambda Role
-  TTSLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: PollyAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - polly:SynthesizeSpeech
-                Resource: '*'
-        - PolicyName: S3TTSAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                  - s3:HeadObject
-                Resource:
-                  - !Sub 'arn:aws:s3:::${TTSBucket}/*'
-              - Effect: Allow
-                Action:
-                  - s3:ListBucket
-                Resource:
-                  - !GetAtt TTSBucket.Arn
-        - PolicyName: SQSAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - sqs:SendMessage
-                  - sqs:ReceiveMessage
-                  - sqs:DeleteMessage
-                  - sqs:GetQueueAttributes
-                  - sqs:GetQueueUrl
-                Resource:
-                  - !GetAtt TTSQueue.Arn
-        - PolicyName: JobStatusTableAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                  - dynamodb:GetItem
-                  - dynamodb:UpdateItem
-                Resource:
-                  - !GetAtt AsyncJobStatusTable.Arn
-
-  # STT (Speech-to-Text) IAM Roles
-  STTLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: STSAssumeTranscribeRole
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - sts:AssumeRole
-                Resource:
-                  - !GetAtt TranscribeClientRole.Arn
-        - PolicyName: DynamoDBAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                  - dynamodb:GetItem
-                  - dynamodb:Query
-                  - dynamodb:UpdateItem
-                Resource:
-                  - !GetAtt PronunciationResultsTable.Arn
-        - PolicyName: S3TranscribeAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                  - s3:DeleteObject
-                Resource:
-                  - !Sub 'arn:aws:s3:::${TranscribeTempBucket}/*'
-              - Effect: Allow
-                Action:
-                  - s3:ListBucket
-                Resource:
-                  - !GetAtt TranscribeTempBucket.Arn
-        - PolicyName: TranscribeAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - transcribe:StartTranscriptionJob
-                  - transcribe:GetTranscriptionJob
-                  - transcribe:DeleteTranscriptionJob
-                Resource: '*'
-
-  TranscribeClientRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub '${AWS::StackName}-transcribe-client-role'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-          - Effect: Allow
-            Principal:
-              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: TranscribeStreamingAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - transcribe:StartStreamTranscription
-                Resource: '*'
-
   HelloWorldFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -825,12 +503,6 @@ Resources:
       CodeUri: TutorFunction
       Handler: tutor.App::handleRequest
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
-      Environment:
-        Variables:
-          WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-          FEEDBACK_TABLE: !Ref FeedbackMessagesTable
-          FEEDBACK_QUEUE_URL: !Ref FeedbackQueue
       Events:
         API1:
           Type: Api
@@ -839,8 +511,6 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/students
             Method: get
-            Auth:
-              Authorizer: CognitoAuthorizer
         API2:
           Type: Api
           Properties:
@@ -848,8 +518,6 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/students/{email}
             Method: get
-            Auth:
-              Authorizer: CognitoAuthorizer
         API3:
           Type: Api
           Properties:
@@ -857,8 +525,6 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/students/{email}/history
             Method: get
-            Auth:
-              Authorizer: CognitoAuthorizer
         API4:
           Type: Api
           Properties:
@@ -866,17 +532,6 @@ Resources:
               Ref: MyApi
             Path: /api/tutor/feedback
             Method: post
-            Auth:
-              Authorizer: CognitoAuthorizer
-        API5:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/tutor/feedback
-            Method: get
-            Auth:
-              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: TutorFunction
 
@@ -911,37 +566,12 @@ Resources:
     Metadata:
       SamResourceId: SessionFunction
 
-  StudentFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Description: Student API - Get tutor information
-      CodeUri: StudentFunction
-      Handler: com.speaktracker.student.StudentHandler::handleRequest
-      Role: !GetAtt CommonLambdaRole.Arn
-      Events:
-        API1:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/student/tutor
-            Method: get
-            Auth:
-              Authorizer: CognitoAuthorizer
-    Metadata:
-      SamResourceId: StudentFunction
-
   SentencesFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: SentencesFunction
       Handler: sentences.App::handleRequest
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
-      Environment:
-        Variables:
-          CLAUDE_API_KEY_SECRET_ID: team3/claude_api_key
-          AI_CONVERSATION_QUEUE_URL: !Ref AIConversationQueue
-          JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
       Events:
         API1:
           Type: Api
@@ -957,83 +587,8 @@ Resources:
               Ref: MyApi
             Path: /api/sentences/{id}/audio
             Method: get
-        GenerateSentences:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/sentences/generate
-            Method: post
-        RecommendSentences:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/sentences/recommend
-            Method: post
-            Auth:
-              Authorizer: CognitoAuthorizer
-        SentenceFeedback:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/sentences/feedback
-            Method: post
-            Auth:
-              Authorizer: CognitoAuthorizer
-        ChatStart:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/ai/chat/start
-            Method: post
-            Auth:
-              Authorizer: CognitoAuthorizer
-        ChatMessage:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/ai/chat/message
-            Method: post
-            Auth:
-              Authorizer: CognitoAuthorizer
-        ChatStatus:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/ai/chat/status/{requestId}
-            Method: get
-            Auth:
-              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: SentencesFunction
-
-  # Claude Worker Function (SQS 이벤트 처리)
-  ClaudeWorkerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: SentencesFunction
-      Handler: sentences.ClaudeWorker::handleRequest
-      Role: !GetAtt CommonLambdaRole.Arn
-      Timeout: 120
-      MemorySize: 512
-      Environment:
-        Variables:
-          AI_CONVERSATIONS_TABLE: !Ref AIConversationsTable
-          JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
-          CLAUDE_API_KEY_SECRET_ID: team3/claude_api_key
-      Events:
-        SQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt AIConversationQueue.Arn
-            BatchSize: 1
-    Metadata:
-      SamResourceId: ClaudeWorkerFunction
   TutorRegisterFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -1071,103 +626,6 @@ Resources:
             Method: post
     Metadata:
       SamResourceId: TutorRegisterFunction
-
-  TTSFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: TTSFunction
-      Handler: com.speaktracker.tts.TTSHandler::handleRequest
-      Role: !GetAtt TTSLambdaRole.Arn
-      Timeout: 60
-      MemorySize: 512
-      Environment:
-        Variables:
-          TTS_BUCKET: !Ref TTSBucket
-          PRESIGNED_URL_EXPIRATION: '3600'
-          TTS_QUEUE_URL: !Ref TTSQueue
-          JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
-      Events:
-        TTSConvert:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/tts
-            Method: post
-        TTSStatus:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/tts/status/{jobId}
-            Method: get
-        KoreanTTSConvert:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/tts/korean
-            Method: post
-        KoreanTTSStatus:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/tts/korean/status/{jobId}
-            Method: get
-    Metadata:
-      SamResourceId: TTSFunction
-
-  # TTS Worker Function (SQS 이벤트 처리)
-  TTSWorkerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: TTSFunction
-      Handler: com.speaktracker.tts.TTSWorker::handleRequest
-      Role: !GetAtt TTSLambdaRole.Arn
-      Timeout: 120
-      MemorySize: 512
-      Environment:
-        Variables:
-          TTS_BUCKET: !Ref TTSBucket
-          JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
-          PRESIGNED_URL_EXPIRATION: '3600'
-      Events:
-        SQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt TTSQueue.Arn
-            BatchSize: 1
-    Metadata:
-      SamResourceId: TTSWorkerFunction
-
-  # STT Function
-  STTFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: STTFunction
-      Handler: com.speaktracker.stt.STTHandler::handleRequest
-      Role: !GetAtt STTLambdaRole.Arn
-      Timeout: 90
-      MemorySize: 512
-      Environment:
-        Variables:
-          TRANSCRIBE_CLIENT_ROLE_ARN: !GetAtt TranscribeClientRole.Arn
-          PRONUNCIATION_RESULTS_TABLE: !Ref PronunciationResultsTable
-          TRANSCRIBE_BUCKET_NAME: !Ref TranscribeTempBucket
-          CREDENTIAL_EXPIRATION_SECONDS: '900'
-      Events:
-        Evaluate:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/stt/evaluate
-            Method: post
-            Auth:
-              Authorizer: CognitoAuthorizer
-    Metadata:
-      SamResourceId: STTFunction
 
   StatisticsFunction:
     Type: AWS::Serverless::Function
@@ -1273,10 +731,6 @@ Resources:
       CodeUri: SentencesWebSocketFunction
       Handler:  websocket.SocketHandler::handleRequest
       Role: !GetAtt WebSocketLambdaRole.Arn
-      Environment:
-        Variables:
-          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
       Policies:
         - Statement:
             - Effect: Allow
@@ -1287,59 +741,6 @@ Resources:
     Metadata:
       SamResourceId: SentencesWebSocketFunction
 
-  # ========================================
-  # Feedback Persistence Function (SQS Consumer)
-  # ========================================
-  FeedbackPersistenceFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: FeedbackPersistenceFunction
-      Handler: com.speaktracker.FeedbackPersistenceHandler::handleRequest
-      Runtime: java21
-      Timeout: 60
-      MemorySize: 512
-      Environment:
-        Variables:
-          FEEDBACK_TABLE: !Ref FeedbackMessagesTable
-      Events:
-        SQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt FeedbackQueue.Arn
-            BatchSize: 10
-            MaximumBatchingWindowInSeconds: 5
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref FeedbackMessagesTable
-        - SQSPollerPolicy:
-            QueueName: !GetAtt FeedbackQueue.QueueName
-    Metadata:
-      SamResourceId: FeedbackPersistenceFunction
-
-  # S3 Bucket for TTS Audio Files
-  TTSAudioBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub '${AWS::StackName}-tts-audio'
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        BlockPublicPolicy: false
-        IgnorePublicAcls: false
-        RestrictPublicBuckets: false
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: ObjectWriter
-      CorsConfiguration:
-        CorsRules:
-          - AllowedOrigins:
-              - '*'
-            AllowedMethods:
-              - GET
-              - HEAD
-            AllowedHeaders:
-              - '*'
-            MaxAge: 3600
-
 
   MyApi:
     Type: AWS::Serverless::Api
@@ -1349,7 +750,7 @@ Resources:
       Cors:
         AllowOrigin: "'*'"
         AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Language-Code,X-Mime-Type'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
         MaxAge: "'3600'"
       # 4XX, 5XX 에러 응답에도 CORS 헤더 추가 (인증 실패 시 CORS 에러 방지)
       GatewayResponses:
@@ -1446,42 +847,21 @@ Resources:
       ApiId: !Ref WebSocketApi
       AutoDeploy: true
 
-  # ========================================
-  # SQS Queues for Feedback Persistence
-  # ========================================
-  FeedbackQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-tutor-feedback-queue'
-      VisibilityTimeout: 300
-      MessageRetentionPeriod: 1209600  # 14일
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt FeedbackDLQ.Arn
-        maxReceiveCount: 3
-
-  FeedbackDLQ:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-tutor-feedback-dlq'
-      MessageRetentionPeriod: 1209600  # 14일
-
-  # DLQ 모니터링 알람
-  FeedbackDLQAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub '${AWS::StackName}-FeedbackDLQ-MessagesAvailable'
-      MetricName: ApproximateNumberOfMessagesVisible
-      Namespace: AWS/SQS
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      Dimensions:
-        - Name: QueueName
-          Value: !GetAtt FeedbackDLQ.QueueName
-
-# ✅ 수정: 주석 처리된 불필요한 코드 삭제
+#  # Lambda에 WebSocket 연결 관리 권한 부여
+#  WebSocketPolicy:
+#    Type: AWS::IAM::Policy
+#    Properties:
+#      PolicyName: WebSocketManageConnectionsPolicy
+#      PolicyDocument:
+#        Version: '2012-10-17'
+#        Statement:
+#          - Effect: Allow
+#            Action:
+#              - 'execute-api:ManageConnections'
+#            Resource:
+#              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+#      Roles:
+#        - !Ref SentencesWebSocketFunctionRole
 
 
 Outputs:
@@ -1572,29 +952,6 @@ Outputs:
     Value: !Ref SentencesTable
     Export:
       Name: !Sub '${AWS::StackName}-SentencesTable'
-
-  TTSUrl:
-    Description: TTS API URL
-    Value: !Sub 'https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/tts'
-
-  TTSAudioBucketName:
-    Description: TTS Audio S3 Bucket Name
-    Value: !Ref TTSAudioBucket
-    Export:
-      Name: !Sub '${AWS::StackName}-TTSAudioBucket'
-
-  FeedbackQueueUrl:
-    Description: Feedback SQS Queue URL
-    Value: !Ref FeedbackQueue
-    Export:
-      Name: !Sub '${AWS::StackName}-FeedbackQueueUrl'
-
-  FeedbackDLQUrl:
-    Description: Feedback DLQ URL
-    Value: !Ref FeedbackDLQ
-    Export:
-      Name: !Sub '${AWS::StackName}-FeedbackDLQUrl'
-
 
   DashboardQueueUrl:
     Description: Dashboard SQS Queue URL

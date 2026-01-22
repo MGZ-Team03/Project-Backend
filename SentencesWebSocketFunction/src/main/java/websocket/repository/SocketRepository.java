@@ -11,7 +11,6 @@ import websocket.dto.StatusRequest;
 
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static com.amazonaws.services.lambda.runtime.LambdaRuntime.getLogger;
 
@@ -170,12 +169,14 @@ public class SocketRepository {
         getLogger().log("=== Repository: Save Connection ===");
         getLogger().log("Tutor: " + tutorEmail);
 
+        deleteOldConnections(tutorEmail);
+
         String connectionId = event.getRequestContext().getConnectionId();
         item.put("connection_id", AttributeValue.builder().s(connectionId).build());
         item.put("tutor_email", AttributeValue.builder().s(tutorEmail).build());
         item.put("connected_at", AttributeValue.builder().s(Instant.now().toString()).build());
         // TTL: 한 달 후
-        long ttl = (System.currentTimeMillis() / 1000) + 30L * 24 * 60 * 60;
+        long ttl = (System.currentTimeMillis() / 1000) + 3L * 24 * 60 * 60;
         item.put("ttl", AttributeValue.builder().n(String.valueOf(ttl)).build());
 
         PutItemRequest request = PutItemRequest.builder()
@@ -183,9 +184,44 @@ public class SocketRepository {
                 .item(item)
                 .build();
 
-        getLogger().log(" connection result : " + request.toString());
-
         dynamoDbClient.putItem(request);
+        getLogger().log("✅ 새 연결 저장 완료: " + connectionId);
+
+    }
+
+    private void deleteOldConnections(String tutorEmail) {
+        getLogger().log("=== Repository: deleteOldConnections ===");
+        try {
+            Map<String, AttributeValue> expressionValues = Map.of(
+                    ":email", AttributeValue.builder().s(tutorEmail).build()
+            );
+
+            QueryRequest request = QueryRequest.builder()
+                    .tableName(connectionTable)
+                    .indexName("tutor_email-index")
+                    .keyConditionExpression("tutor_email = :email")
+                    .expressionAttributeValues(expressionValues)
+                    .projectionExpression("connection_id")
+                    .build();
+
+            QueryResponse response = dynamoDbClient.query(request);
+
+            // 모든 기존 연결 삭제
+            for (Map<String, AttributeValue> item : response.items()) {
+                DeleteItemRequest deleteRequest = DeleteItemRequest.builder()
+                        .tableName(connectionTable)
+                        .key(Map.of("connection_id", item.get("connection_id")))
+                        .build();
+
+                dynamoDbClient.deleteItem(deleteRequest);
+            }
+
+            getLogger().log("✅ 기존 연결 삭제 완료");
+
+        } catch (Exception e){
+            getLogger().log("⚠️ 기존 연결 삭제 실패: " + e.getMessage());
+
+        }
     }
 
     public Optional<Map<String, AttributeValue>> getConnection(String connectionId) {
@@ -278,106 +314,6 @@ public class SocketRepository {
         }
     }
 
-    public List<String> getAllActiveConnections() {
-        getLogger().log("=== Repository: GetAllActiveConnections ===");
-        getLogger().log("=== Websokcete 연결 조회 ===");
-        getLogger().log("=== 테이블 : " + tutorStudentsTableName);
-
-        try {
-            ScanRequest scanRequest = ScanRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .projectionExpression("connectionId")
-                    .build();
-            ScanResponse response = dynamoDbClient.scan(scanRequest);
-            getLogger().log("=== socketRepository.getAllActiveConnectionId.result: " + response.toString());
-            // 로그아웃이면 null
-            List<String> connectionIds = response.items().stream()
-                    .map(item -> item.get("connectionId"))
-                    .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
-                    .map(AttributeValue::s)
-                    .collect(Collectors.toList());
-
-            getLogger().log("조회 완료: " + connectionIds.size() + "개 연결");
-            getLogger().log("------------------------------------------");
-
-            return connectionIds;
-        } catch (Exception e) {
-            getLogger().log("=== SocketRepository.GetAllActiveConnections: 연결 실패 ===");
-            getLogger().log("에러: " + e.getMessage());
-            return List.of();
-        }
-    }
-
-    private String findIdByTutorStudent(String tutorEmail, String studentEmail) {
-        try {
-            Map<String, AttributeValue> expressionValues = new HashMap<>();
-            expressionValues.put(":tutorEmail", AttributeValue.builder().s(tutorEmail).build());
-            expressionValues.put(":studentEmail", AttributeValue.builder().s(studentEmail).build());
-
-            QueryRequest queryRequest = QueryRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .indexName("tutor_email-index")
-                    .keyConditionExpression("tutor_email = :tutorEmail")
-                    .filterExpression("student_email = :studentEmail")
-                    .expressionAttributeValues(expressionValues)
-                    .limit(1)
-                    .build();
-
-            QueryResponse response = dynamoDbClient.query(queryRequest);
-
-            if (response.items().isEmpty()) {
-                return null;
-            }
-
-            return response.items().get(0).get("id").s();
-
-        } catch (Exception e) {
-            getLogger().log("⚠️ findIdByTutorStudent failed: " + e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * 모든 활성 연결 조회 (학생 + 튜터)
-     * connectionId가 null이 아닌 레코드만 반환
-     */
-    public List<String> getAllActiveConnectionIds() {
-        System.out.println("========================================");
-        System.out.println("  WebSocket 연결 조회");
-        System.out.println("========================================");
-        System.out.println("테이블: " + tutorStudentsTableName);
-
-        try {
-            ScanRequest scanRequest = ScanRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .projectionExpression("connectionId")
-                    .build();
-
-            ScanResponse response = dynamoDbClient.scan(scanRequest);
-
-            // null 체크 및 빈 문자열 필터링
-            List<String> connectionIds = response.items().stream()
-                    .filter(item -> item.containsKey("connectionId"))
-                    .map(item -> item.get("connectionId"))
-                    .filter(attr -> attr != null && attr.s() != null && !attr.s().isEmpty())
-                    .map(AttributeValue::s)
-                    .collect(Collectors.toList());
-
-            System.out.println("조회 완료: " + connectionIds.size() + "개 연결");
-            System.out.println("========================================");
-
-            return connectionIds;
-
-        } catch (Exception e) {
-            System.err.println("========================================");
-            System.err.println("  ❌ 연결 조회 실패");
-            System.err.println("========================================");
-            System.err.println("에러: " + e.getMessage());
-            e.printStackTrace();
-            return List.of();
-        }
-    }
-
     /**
      * 튜터 연결만 조회
      * student_email = "TUTOR_SELF"인 레코드의 connectionId 반환
@@ -393,39 +329,31 @@ public class SocketRepository {
      * }
      */
     public String getTutorConnectionIds(String tutorEmail) {
-        System.out.println("========================================");
-        System.out.println("  튜터 연결 조회");
-        System.out.println("========================================");
-        System.out.println("테이블: " + connectionTable);
-        try {
-           Map<String, AttributeValue> expressionValues = new HashMap<>();
-            expressionValues.put(":email", AttributeValue.builder().s(tutorEmail).build());
-            getLogger().log("getTutorconnectionIds.tutorEmail: " + tutorEmail);
 
-            ScanRequest scanRequest = ScanRequest.builder()
+       getLogger().log("  튜터 연결 조회 "+"테이블: " + connectionTable);
+
+        try {
+            Map<String, AttributeValue> expressionValues = Map.of(
+                    ":email", AttributeValue.builder().s(tutorEmail).build()
+            );
+
+
+            QueryRequest request = QueryRequest.builder()
                     .tableName(connectionTable)
-                    .filterExpression("tutor_email = :email")
+                    .indexName("tutor_email-index")
+                    .keyConditionExpression("tutor_email = :email")
                     .expressionAttributeValues(expressionValues)
-                    .projectionExpression("connection_id, connected_at")
+                    .projectionExpression("connection_id")
+                    .limit(1)  // ✅ 이제 안전! (항상 1개만 있음)
                     .build();
 
-            ScanResponse response = dynamoDbClient.scan(scanRequest);
-            getLogger().log("=== socketRepository.getTutorConnectionIds === : "+response);
 
-            // 가장 최근 connection_id 하나만 반환
+            QueryResponse response = dynamoDbClient.query(request);
+
             String connectionId = response.items().stream()
-                    .filter(item -> item.containsKey("connection_id"))
-                    .filter(item -> item.containsKey("connected_at"))
-                    .sorted((a, b) -> {
-                        String timeA = a.get("connected_at").s();
-                        String timeB = b.get("connected_at").s();
-                        return timeB.compareTo(timeA);
-                    })
-                    .limit(1)
+                    .findFirst()
                     .map(item -> item.get("connection_id").s())
-                    .findFirst()  // ✅ List 대신 Optional
-                    .orElse(null);  // ✅ 없으면 null
-
+                    .orElse(null);
 
             if (connectionId != null) {
                 getLogger().log("✅ ConnectionId 발견: " + connectionId);
@@ -434,7 +362,6 @@ public class SocketRepository {
             }
 
             return connectionId;
-
 
         } catch (Exception e) {
             System.err.println("========================================");
