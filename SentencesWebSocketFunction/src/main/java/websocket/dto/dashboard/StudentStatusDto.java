@@ -17,7 +17,7 @@ public class StudentStatusDto {
     private String email;
     private String tutorEmail;
     private String name;
-    private String activity;          // "sentence" | "ai" | null
+    private String room;          // "sentence" | "ai" | null
     private String status;             // "speaking" | "listening" | "inactive"
     private Integer speakingRatio;
     private Integer duration;
