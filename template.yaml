@@ -767,6 +767,8 @@ Resources:
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
           FEEDBACK_TABLE: !Ref FeedbackMessagesTable
           FEEDBACK_QUEUE_URL: !Ref FeedbackQueue
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          USERS_TABLE: !Ref UsersTable
       Events:
         API1:
           Type: Api
@@ -1556,6 +1558,22 @@ Resources:
             Method: POST
             Auth:
               Authorizer: CognitoAuthorizer
+        GetNotifications:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /api/notifications
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        MarkNotificationAsRead:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /api/notifications/{id}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   NotificationPersistenceFunction:
     Type: AWS::Serverless::Function
@@ -1581,30 +1599,8 @@ Resources:
         - SQSPollerPolicy:
             QueueName: !GetAtt NotificationQueue.QueueName
 
-  # 알림 조회 API Lambda
-  NotificationQueryFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: NotificationPersistenceFunction
-      Handler: com.speaktracker.notificationpersistence.NotificationQueryHandler::handleRequest
-      Runtime: java21
-      Timeout: 30
-      MemorySize: 512
-      Environment:
-        Variables:
-          NOTIFICATIONS_TABLE: !Ref NotificationsTable
-      Events:
-        GetNotifications:
-          Type: Api
-          Properties:
-            RestApiId: !Ref MyApi
-            Path: /api/notifications
-            Method: GET
-            Auth:
-              Authorizer: CognitoAuthorizer
-      Policies:
-        - DynamoDBReadPolicy:
-            TableName: !Ref NotificationsTable
+  # 알림 조회 API Lambda (이벤트는 TutorRegisterFunction에서 처리)
+  # NotificationQueryFunction은 더 이상 사용하지 않음 - TutorRegisterFunction이 알림 API 담당
 
   # DLQ 모니터링 알람
   FeedbackDLQAlarm:

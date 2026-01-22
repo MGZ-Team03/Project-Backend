@@ -694,4 +694,68 @@ public class DynamoDBHelper {
             throw new RuntimeException("Failed to get unread notification count for user: " + userEmail, e);
         }
     }
+
+    /**
+     * 알림 저장 (동기적)
+     */
+    public void saveNotification(String userEmail, String type, String title, 
+                                  String message, Map<String, Object> data, 
+                                  List<String> sentVia) {
+        try {
+            String notificationId = UUID.randomUUID().toString();
+            long createdAt = System.currentTimeMillis();
+            
+            // TTL 설정 (30일 후 자동 삭제)
+            long ttl = (createdAt / 1000) + (30 * 24 * 60 * 60);
+
+            // DynamoDB 아이템 생성
+            Map<String, AttributeValue> item = new HashMap<>();
+            item.put("user_email", AttributeValue.builder().s(userEmail).build());
+            item.put("notification_id_timestamp", AttributeValue.builder()
+                    .s(notificationId + "#" + createdAt).build());
+            item.put("notification_id", AttributeValue.builder().s(notificationId).build());
+            item.put("type", AttributeValue.builder().s(type).build());
+            item.put("title", AttributeValue.builder().s(title).build());
+            item.put("message", AttributeValue.builder().s(message).build());
+            item.put("is_read", AttributeValue.builder().bool(false).build());
+            item.put("is_read_created_at", AttributeValue.builder()
+                    .s("false#" + createdAt).build());
+            item.put("created_at", AttributeValue.builder().n(String.valueOf(createdAt)).build());
+            item.put("ttl", AttributeValue.builder().n(String.valueOf(ttl)).build());
+
+            // data 필드 (Map)
+            if (data != null && !data.isEmpty()) {
+                Map<String, AttributeValue> dataAttributes = new HashMap<>();
+                
+                for (Map.Entry<String, Object> entry : data.entrySet()) {
+                    Object value = entry.getValue();
+                    if (value instanceof String) {
+                        dataAttributes.put(entry.getKey(), AttributeValue.builder().s((String) value).build());
+                    } else if (value instanceof Number) {
+                        dataAttributes.put(entry.getKey(), AttributeValue.builder().n(value.toString()).build());
+                    }
+                }
+                
+                if (!dataAttributes.isEmpty()) {
+                    item.put("data", AttributeValue.builder().m(dataAttributes).build());
+                }
+            }
+
+            // sent_via 필드 (List)
+            if (sentVia != null && !sentVia.isEmpty()) {
+                item.put("sent_via", AttributeValue.builder().ss(sentVia).build());
+            }
+
+            // DynamoDB에 저장
+            dynamoDbClient.putItem(PutItemRequest.builder()
+                    .tableName(notificationsTable)
+                    .item(item)
+                    .build());
+
+            System.out.println("✅ Notification saved for user: " + userEmail + ", type: " + type);
+        } catch (Exception e) {
+            System.err.println("❌ Failed to save notification: " + e.getMessage());
+            throw new RuntimeException("Failed to save notification", e);
+        }
+    }
 }

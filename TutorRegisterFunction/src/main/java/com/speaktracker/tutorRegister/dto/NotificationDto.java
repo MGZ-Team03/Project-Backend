@@ -8,6 +8,7 @@ import java.util.Map;
  */
 public class NotificationDto {
     private String notificationId;
+    private String notificationIdTimestamp;  // DynamoDB 키 (notification_id#timestamp)
     private String type;
     private String title;
     private String message;
@@ -26,6 +27,14 @@ public class NotificationDto {
 
     public void setNotificationId(String notificationId) {
         this.notificationId = notificationId;
+    }
+
+    public String getNotificationIdTimestamp() {
+        return notificationIdTimestamp;
+    }
+
+    public void setNotificationIdTimestamp(String notificationIdTimestamp) {
+        this.notificationIdTimestamp = notificationIdTimestamp;
     }
 
     public String getType() {

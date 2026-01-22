@@ -240,9 +240,17 @@ public class TutorRegisterService {
                 request.getStudentEmail(), requestId, tutorEmail, tutor.getName(), now
         );
 
-        // SQS 큐잉
-        sqsHelper.queueRequestApprovedNotification(
-                request.getStudentEmail(), tutor.getName(), requestId
+        // 알림 DB 저장 (동기적)
+        Map<String, Object> notificationData = new HashMap<>();
+        notificationData.put("request_id", requestId);
+        notificationData.put("tutor_name", tutor.getName());
+        dynamoDBHelper.saveNotification(
+                request.getStudentEmail(),
+                "TUTOR_REQUEST_APPROVED",
+                "튜터 등록 요청이 승인되었습니다",
+                tutor.getName() + "님이 등록 요청을 승인했습니다!",
+                notificationData,
+                Arrays.asList("websocket", "email")
         );
 
         // 이메일 알림
@@ -294,9 +302,18 @@ public class TutorRegisterService {
                 request.getStudentEmail(), requestId, tutorEmail, tutor.getName(), reason, now
         );
 
-        // SQS 큐잉
-        sqsHelper.queueRequestRejectedNotification(
-                request.getStudentEmail(), tutor.getName(), requestId, reason
+        // 알림 DB 저장 (동기적)
+        Map<String, Object> notificationData = new HashMap<>();
+        notificationData.put("request_id", requestId);
+        notificationData.put("tutor_name", tutor.getName());
+        notificationData.put("rejection_reason", reason);
+        dynamoDBHelper.saveNotification(
+                request.getStudentEmail(),
+                "TUTOR_REQUEST_REJECTED",
+                "튜터 등록 요청이 거부되었습니다",
+                tutor.getName() + "님이 등록 요청을 거부했습니다.",
+                notificationData,
+                Arrays.asList("websocket", "email")
         );
 
         // 이메일 알림
@@ -399,8 +416,36 @@ public class TutorRegisterService {
 
         List<NotificationDto> result = new ArrayList<>();
         for (Notification notification : notifications) {
+            // NEW_TUTOR_REQUEST 타입 알림의 경우, 요청 상태가 pending인 경우만 포함
+            if ("NEW_TUTOR_REQUEST".equals(notification.getType())) {
+                Map<String, Object> data = notification.getData();
+                
+                if (data != null && data.containsKey("request_id")) {
+                    String requestId = (String) data.get("request_id");
+                    
+                    try {
+                        TutorRequest request = dynamoDBHelper.getTutorRequestByRequestId(requestId);
+                        
+                        if (request != null) {
+                            System.out.println("DEBUG: Request status: " + request.getStatus());
+                        }
+                        
+                        // 요청이 없거나 pending 상태가 아니면 스킵
+                        if (request == null || !"pending".equals(request.getStatus())) {
+                            continue;
+                        }
+                    } catch (Exception e) {
+                        // 요청 조회 실패 시 스킵
+                        System.err.println("❌ Failed to check request status for notification: " + notification.getNotificationId());
+                        e.printStackTrace();
+                        continue;
+                    }
+                }
+            }
+            
             NotificationDto dto = new NotificationDto();
             dto.setNotificationId(notification.getNotificationId());
+            dto.setNotificationIdTimestamp(notification.getNotificationIdTimestamp());
             dto.setType(notification.getType());
             dto.setTitle(notification.getTitle());
             dto.setMessage(notification.getMessage());

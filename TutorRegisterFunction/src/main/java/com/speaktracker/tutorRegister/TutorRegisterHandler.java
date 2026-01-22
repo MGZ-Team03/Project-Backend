@@ -12,6 +12,8 @@ import com.speaktracker.tutorRegister.services.TutorRegisterService;
 import com.speaktracker.tutorRegister.dto.*;
 import static com.speaktracker.tutorRegister.exceptions.TutorRegisterExceptions.*;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -268,7 +270,12 @@ public class TutorRegisterHandler implements RequestHandler<APIGatewayProxyReque
     private String extractNotificationId(String path) {
         // /api/notifications/{id} -> id 추출
         String[] parts = path.split("/");
-        return parts.length > 3 ? parts[3] : null;
+        String id = parts.length > 3 ? parts[3] : null;
+        // URL 디코딩 (예: %23 -> #)
+        if (id != null) {
+            id = URLDecoder.decode(id, StandardCharsets.UTF_8);
+        }
+        return id;
     }
 
     private APIGatewayProxyResponseEvent createResponse(int statusCode, ApiResponse<?> body) {
