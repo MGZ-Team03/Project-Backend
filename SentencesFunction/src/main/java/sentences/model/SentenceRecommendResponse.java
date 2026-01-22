@@ -4,6 +4,7 @@ import java.util.List;
 
 public class SentenceRecommendResponse {
     private boolean success;
+    private String sessionId;
     private List<RecommendedSentence> sentences;
     private String topic;
     private String difficulty;
@@ -44,6 +45,14 @@ public class SentenceRecommendResponse {
 
     public void setSentences(List<RecommendedSentence> sentences) {
         this.sentences = sentences;
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
     }
 
     public String getTopic() {
