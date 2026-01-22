@@ -39,6 +39,12 @@ public class UserRepository {
             item.put("user_sub", AttributeValue.builder().s(user.getUserSub()).build());
         }
         
+        // 튜터인 경우 기본값 설정
+        if ("tutor".equals(user.getRole())) {
+            item.put("max_students", AttributeValue.builder().n("10").build());
+            item.put("is_accepting", AttributeValue.builder().bool(true).build());
+        }
+        
         PutItemRequest putItemRequest = PutItemRequest.builder()
             .tableName(usersTable)
             .item(item)

@@ -14,10 +14,11 @@ parallel = true
 lint = true
 
 [default.deploy.parameters]
-capabilities = ["CAPABILITY_NAMED_IAM", "CAPABILITY_IAM"]
+capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
 s3_prefix = "project02-speaktracker-hwkang"
+parameter_overrides = "SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
 image_repositories = []
 
 [default.package.parameters]
