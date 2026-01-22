@@ -4,19 +4,11 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketResponse;
 import com.google.gson.Gson;
 import lombok.RequiredArgsConstructor;
-import software.amazon.awssdk.core.SdkBytes;
-import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient;
-import software.amazon.awssdk.services.apigatewaymanagementapi.model.GoneException;
-import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest;
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import websocket.dto.EmailRequest;
 import websocket.dto.StatusRequest;
 import websocket.dto.WebSocketRequest;
-import websocket.dto.dashboard.DashboardUpdateDto;
 import websocket.repository.SocketRepository;
-import websocket.utils.StudentStatusCollector;
 
-import java.net.URI;
 import java.util.Map;
 
 import static com.amazonaws.services.lambda.runtime.LambdaRuntime.getLogger;
@@ -31,9 +23,6 @@ import static websocket.controller.SocketController.createResponse;
 public class SocketService {
     private final SocketRepository socketRepository;
     private final Gson gson = new Gson();
-    private final StudentStatusCollector collector;
-    String wsEndpoint = System.getenv("WS_ENDPOINT");
-
     public APIGatewayV2WebSocketResponse handleConnect(APIGatewayV2WebSocketEvent event) {
         getLogger().log("------------connect handler-------------");
 
@@ -133,38 +122,6 @@ public class SocketService {
         }else {
             getLogger().log("-==== exist connecionId === ");
         }
-        try {
-            getLogger().log("🔍 collector is null? " + (collector == null));
-            getLogger().log("📤 [즉시 전송] 시작...");
-
-            // ✅ StudentStatusCollector 사용
-            DashboardUpdateDto dashboardData = collector.collectByTutor(request.getTutorEmail());
-
-            String messageBody = gson.toJson(dashboardData);
-            getLogger().log("📦 크기: " + messageBody.length() + " bytes");
-
-            // WebSocket 전송
-            ApiGatewayManagementApiClient wsClient = ApiGatewayManagementApiClient.builder()
-                    .endpointOverride(URI.create(wsEndpoint))
-                    .build();
-
-            PostToConnectionRequest postRequest = PostToConnectionRequest.builder()
-                    .connectionId(connectionId)
-                    .data(SdkBytes.fromUtf8String(messageBody))
-                    .build();
-
-            wsClient.postToConnection(postRequest);
-
-            getLogger().log("✅ [즉시 전송] 완료!");
-
-        } catch (GoneException e) {
-            getLogger().log("⚠️ 연결 종료됨");
-        } catch (Exception e) {
-            getLogger().log("❌ 전송 실패: " + e.getMessage());
-            e.printStackTrace();
-        }
-
-
         return createResponse(200, event.getBody());
 
     }
