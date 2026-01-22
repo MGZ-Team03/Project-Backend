@@ -22,6 +22,7 @@ Globals:
         FEEDBACK_TABLE: !Ref FeedbackMessagesTable
         CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
         SENTENCES_TABLE: !Ref SentencesTable
+        SENTENCE_AUDIO_TABLE: !Ref SentenceAudioTable
 
 Resources:
   # Cognito User Pool for authentication
@@ -106,6 +107,7 @@ Resources:
                   - !GetAtt FeedbackMessagesTable.Arn
                   - !GetAtt WebSocketConnectionsTable.Arn
                   - !GetAtt SentencesTable.Arn
+                  - !GetAtt SentenceAudioTable.Arn
                   # GSI도 포함
                   - !Sub '${UsersTable.Arn}/index/*'
                   - !Sub '${TutorStudentsTable.Arn}/index/*'
@@ -151,12 +153,28 @@ Resources:
               - Effect: Allow
                 Action:
                   - sqs:SendMessage
+                  - sqs:SendMessageBatch
                   - sqs:ReceiveMessage
                   - sqs:DeleteMessage
                   - sqs:GetQueueAttributes
                   - sqs:GetQueueUrl
                 Resource:
                   - !GetAtt AIConversationQueue.Arn
+                  - !GetAtt TTSQueue.Arn
+        - PolicyName: S3TTSReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${TTSBucket}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt TTSBucket.Arn
         - PolicyName: JobStatusTableAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -455,6 +473,29 @@ Resources:
         - Key: Name
           Value: Async Job Status Table
 
+  # 9-1. Sentence Audio Table (문장 연습 세션별 오디오 상태/메타데이터)
+  SentenceAudioTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-sentence-audio'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sessionId
+          AttributeType: S
+        - AttributeName: sentenceIndex
+          AttributeType: N
+      KeySchema:
+        - AttributeName: sessionId
+          KeyType: HASH
+        - AttributeName: sentenceIndex
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: Sentence Audio Table
+
   # 10. Pronunciation Results 테이블
   PronunciationResultsTable:
     Type: AWS::DynamoDB::Table
@@ -626,6 +667,19 @@ Resources:
                   - dynamodb:UpdateItem
                 Resource:
                   - !GetAtt AsyncJobStatusTable.Arn
+        - PolicyName: SentenceAudioTableAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt SentenceAudioTable.Arn
+                  - !Sub '${SentenceAudioTable.Arn}/index/*'
 
   # STT (Speech-to-Text) IAM Roles
   STTLambdaRole:
@@ -854,6 +908,9 @@ Resources:
           CLAUDE_API_KEY_SECRET_ID: team3/claude_api_key
           AI_CONVERSATION_QUEUE_URL: !Ref AIConversationQueue
           JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
+          TTS_QUEUE_URL: !Ref TTSQueue
+          TTS_BUCKET: !Ref TTSBucket
+          PRESIGNED_URL_EXPIRATION: '3600'
       Events:
         API1:
           Type: Api
@@ -885,6 +942,13 @@ Resources:
             Method: post
             Auth:
               Authorizer: CognitoAuthorizer
+        SentenceAudioSession:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/sentences/audio/{sessionId}
+            Method: get
         SentenceFeedback:
           Type: Api
           Properties:
@@ -1228,30 +1292,6 @@ Resources:
     Metadata:
       SamResourceId: FeedbackPersistenceFunction
 
-  # S3 Bucket for TTS Audio Files
-  TTSAudioBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub '${AWS::StackName}-tts-audio'
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        BlockPublicPolicy: false
-        IgnorePublicAcls: false
-        RestrictPublicBuckets: false
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: ObjectWriter
-      CorsConfiguration:
-        CorsRules:
-          - AllowedOrigins:
-              - '*'
-            AllowedMethods:
-              - GET
-              - HEAD
-            AllowedHeaders:
-              - '*'
-            MaxAge: 3600
-
 
   MyApi:
     Type: AWS::Serverless::Api
@@ -1495,7 +1535,7 @@ Outputs:
 
   TTSAudioBucketName:
     Description: TTS Audio S3 Bucket Name
-    Value: !Ref TTSAudioBucket
+    Value: !Ref TTSBucket
     Export:
       Name: !Sub '${AWS::StackName}-TTSAudioBucket'
 
