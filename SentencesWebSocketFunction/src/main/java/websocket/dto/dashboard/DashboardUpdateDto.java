@@ -10,6 +10,7 @@ import java.util.Map;
  * 대시보드 전체 업데이트 데이터
  */
 @Data
+@Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor

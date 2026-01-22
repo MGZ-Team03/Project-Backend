@@ -725,6 +725,48 @@ Resources:
     Metadata:
       SamResourceId: AuthFunction
 
+  StudentStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: StudentStatusFunction
+      Handler: com.peaktracker.student-status.StudentStatusHandler::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/students
+            Method: get
+        API2:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/students/{email}
+            Method: get
+        API3:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/students/{email}/history
+            Method: get
+        API4:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/tutor/feedback
+            Method: post
+    Metadata:
+      SamResourceId: TutorFunction
+
   SentencesWebSocketFunction:
     Type: AWS::Serverless::Function
     Properties:

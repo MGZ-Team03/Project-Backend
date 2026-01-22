@@ -10,6 +10,7 @@ import lombok.*;
  * 개별 학생의 실시간 상태
  */
 @Data
+@Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor

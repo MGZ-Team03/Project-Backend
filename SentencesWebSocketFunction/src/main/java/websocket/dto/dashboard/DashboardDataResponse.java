@@ -1,10 +1,9 @@
 package websocket.dto.dashboard;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
+
 // 테스트 목업
+@Data
 @Getter
 @Builder
 @NoArgsConstructor

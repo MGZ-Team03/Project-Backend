@@ -20,12 +20,12 @@ public class StudentStatusCollector {
     private final String usersTable;
     private final String sessionsTable;
 
-    public DashboardUpdateDto collectAllStudents() {
+    public DashboardUpdateDto collectAllStudents(String tutorEmail) {
         getLogger().log("========================================");
         getLogger().log("  전체 학생 상태 수집");
         getLogger().log("========================================");
 
-        List<Map<String, AttributeValue>> studentRecords = getAllStudents();
+        List<Map<String, AttributeValue>> studentRecords = getStudentsByTutor(tutorEmail);
 
         getLogger().log("✅ 전체학생수: " + studentRecords.size());
         getLogger().log("studentRecords: " + studentRecords);
@@ -124,21 +124,21 @@ public class StudentStatusCollector {
                 .build();
     }
 
-    private List<Map<String, AttributeValue>> getAllStudents() {
-        try {
-            ScanRequest scanRequest = ScanRequest.builder()
-                    .tableName(tutorStudentTable)
-                    .build();
-
-            ScanResponse response = dynamoDbClient.scan(scanRequest);
-            getLogger().log("전체 학생: " + response.items().size());
-            return response.items();
-
-        } catch (Exception e) {
-            getLogger().log("⚠️ 전체 학생 조회 실패: " + e.getMessage());
-            return List.of();
-        }
-    }
+//    private List<Map<String, AttributeValue>> getAllStudents() {
+//        try {
+//            ScanRequest scanRequest = ScanRequest.builder()
+//                    .tableName(tutorStudentTable)
+//                    .build();
+//
+//            ScanResponse response = dynamoDbClient.scan(scanRequest);
+//            getLogger().log("전체 학생: " + response.items().size());
+//            return response.items();
+//
+//        } catch (Exception e) {
+//            getLogger().log("⚠️ 전체 학생 조회 실패: " + e.getMessage());
+//            return List.of();
+//        }
+//    }
 
     private List<Map<String, AttributeValue>> getStudentsByTutor(String tutorEmail) {
         try {
