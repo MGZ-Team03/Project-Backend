@@ -26,7 +26,8 @@ public class SocketHandler implements RequestHandler<APIGatewayV2WebSocketEvent,
         // 의존성 수동 주입
         SocketRepository repository = new SocketRepository(
                 DynamoDbConfig.connectDynamoDb(),
-                tutorStudentsTable
+                tutorStudentsTable,
+                connectionsTable
         );
         SocketService service = new SocketService(repository);
         this.controller = new SocketController(service, new Gson());
