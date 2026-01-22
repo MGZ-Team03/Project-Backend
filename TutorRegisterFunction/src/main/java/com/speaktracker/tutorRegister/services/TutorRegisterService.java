@@ -45,8 +45,8 @@ public class TutorRegisterService {
             tutorInfo.setBio(tutor.getBio());
             tutorInfo.setSpecialties(tutor.getSpecialties());
             tutorInfo.setProfileImage(tutor.getProfileImage());
-            tutorInfo.setMaxStudents(tutor.getMaxStudents());
-            tutorInfo.setIsAccepting(tutor.getIsAccepting());
+            tutorInfo.setMaxStudents(tutor.getMaxStudents() != null ? tutor.getMaxStudents() : 10);
+            tutorInfo.setIsAccepting(tutor.getIsAccepting() != null ? tutor.getIsAccepting() : true);
 
             // 현재 학생 수 조회
             int currentStudents = dynamoDBHelper.getActiveTutorStudentCount(tutor.getEmail());
@@ -215,7 +215,8 @@ public class TutorRegisterService {
         // 4. 정원 확인
         User tutor = dynamoDBHelper.getUserByEmail(tutorEmail);
         int currentStudents = dynamoDBHelper.getActiveTutorStudentCount(tutorEmail);
-        if (currentStudents >= tutor.getMaxStudents()) {
+        int maxStudents = tutor.getMaxStudents() != null ? tutor.getMaxStudents() : 10;
+        if (currentStudents >= maxStudents) {
             throw new CapacityExceededException("튜터의 정원이 가득 찼습니다.");
         }
 
@@ -400,7 +401,8 @@ public class TutorRegisterService {
 
         // 5. 정원 확인
         int currentStudents = dynamoDBHelper.getActiveTutorStudentCount(tutorEmail);
-        if (currentStudents >= tutor.getMaxStudents()) {
+        int maxStudents = tutor.getMaxStudents() != null ? tutor.getMaxStudents() : 10;
+        if (currentStudents >= maxStudents) {
             throw new CapacityExceededException("튜터의 정원이 가득 찼습니다.");
         }
     }
