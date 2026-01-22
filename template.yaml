@@ -22,27 +22,14 @@ Globals:
         FEEDBACK_TABLE: !Ref FeedbackMessagesTable
         CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
         SENTENCES_TABLE: !Ref SentencesTable
-        WS_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
 
 Resources:
-
-  DashboardQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-dashboard-queue'
-      VisibilityTimeout: 90  # Lambda timeout보다 3배 길게
-      MessageRetentionPeriod: 345600  # 4일
-      ReceiveMessageWaitTimeSeconds: 0
-      Tags:
-        - Key: Name
-          Value: Dashboard Queue
-
   # Cognito User Pool for authentication
   UserPool:
     Type: AWS::Cognito::UserPool
     # 스택 삭제/업데이트 시에도 사용자 데이터 보호
-    #    DeletionPolicy: Retain
-    #    UpdateReplacePolicy: Retain
+#    DeletionPolicy: Retain
+#    UpdateReplacePolicy: Retain
     Properties:
       # 동적 네이밍: 여러 환경(dev, staging, prod) 배포 시 충돌 방지
       UserPoolName: !Sub "${AWS::StackName}-userpool"
@@ -72,8 +59,6 @@ Resources:
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     # 스택 삭제/업데이트 시에도 클라이언트 설정 보호
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       ClientName: !Sub "${AWS::StackName}-client"
       UserPoolId: !Ref UserPool
@@ -149,6 +134,7 @@ Resources:
                   - 'sqs:GetQueueUrl'
                 Resource:
                   - !GetAtt FeedbackQueue.Arn
+
         - PolicyName: SecretsManagerReadClaudeKey
           PolicyDocument:
             Version: '2012-10-17'
@@ -158,8 +144,7 @@ Resources:
                   - secretsmanager:GetSecretValue
                 Resource:
                   - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:team3/claude_api_key*'
-        # ✅ 수정: 두 개의 SQSAccess 정책을 하나로 통합
-        - PolicyName: SQSFullAccess
+        - PolicyName: SQSAccess
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -172,7 +157,6 @@ Resources:
                   - sqs:GetQueueUrl
                 Resource:
                   - !GetAtt AIConversationQueue.Arn
-                  - !GetAtt DashboardQueue.Arn
         - PolicyName: JobStatusTableAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -232,17 +216,6 @@ Resources:
                   - 'execute-api:ManageConnections'
                 Resource:
                   - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-        - PolicyName: SQSAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - sqs:SendMessage
-                  - sqs:ReceiveMessage
-                  - sqs:DeleteMessage
-                  - sqs:GetQueueAttributes
-                Resource: !GetAtt DashboardQueue.Arn
 
   # 1. Users 테이블
   UsersTable:
@@ -376,8 +349,6 @@ Resources:
   # 6. Feedback Messages 테이블
   FeedbackMessagesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-feedback-messages'
       BillingMode: PAY_PER_REQUEST
@@ -412,8 +383,6 @@ Resources:
   # 7. WebSocket Connections 테이블
   WebSocketConnectionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-websocket-connections'
       BillingMode: PAY_PER_REQUEST
@@ -450,8 +419,6 @@ Resources:
   # 8. Sentences 테이블
   SentencesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-sentences'
       BillingMode: PAY_PER_REQUEST
@@ -468,61 +435,6 @@ Resources:
       Tags:
         - Key: Name
           Value: Sentences Table
-
-
-  # ========================================
-  # 대시보드 SQS 핸들러 Lambda
-  # ========================================
-  DashboardSQSFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: SentencesWebSocketFunction
-      Handler: websocket.handler.DashboardSQSHandler::handleRequest
-      Role: !GetAtt WebSocketLambdaRole.Arn
-
-      Environment:
-        Variables:
-          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable  # ← 추가!
-          WS_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
-      Events:
-        SQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt DashboardQueue.Arn
-            BatchSize: 10
-            Enabled: true
-    Metadata:
-      SamResourceId: DashboardSQSFunction
-
-  # ========================================
-  # 대시보드 데이터 생성기 Lambda
-  # ========================================
-  DashboardDataGeneratorFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: SentencesWebSocketFunction
-      Handler: websocket.handler.DataGeneratorHandler::handleRequest
-      Role: !GetAtt CommonLambdaRole.Arn
-      Timeout: 30
-      MemorySize: 512
-      Environment:
-        Variables:
-          QUEUE_URL: !Ref DashboardQueue
-          USERS_TABLE: !Ref UsersTable
-          SESSIONS_TABLE: !Ref LearningSessionsTable
-          STATISTICS_TABLE: !Ref DailyStatisticsTable
-          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-      Events:
-        ScheduleEvent:
-          Type: Schedule
-          Properties:
-            Schedule: rate(1 minute)
-            Enabled: true
-    Metadata:
-      SamResourceId: DashboardDataGeneratorFunction
-
 
   # 9. Async Job Status 테이블 (SQS 비동기 작업 상태 추적)
   AsyncJobStatusTable:
@@ -823,7 +735,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: TutorFunction
-      Handler: tutor.App::handleRequest
+      Handler: com.speaktracker.tutor.TutorFeedbackHandler::handleRequest
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Environment:
         Variables:
@@ -1206,27 +1118,27 @@ Resources:
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
       Policies:
         - Statement:
-            - Effect: Allow
-              Action:
-                - cognito-idp:AdminInitiateAuth
-                - cognito-idp:AdminCreateUser
-                - cognito-idp:AdminSetUserPassword
-                - cognito-idp:SignUp
-                - cognito-idp:InitiateAuth
-                - cognito-idp:GetUser
-                - cognito-idp:AdminGetUser
-                - cognito-idp:ConfirmSignUp
-              Resource: !GetAtt UserPool.Arn
-            - Effect: Allow
-              Action:
-                - dynamodb:PutItem
-                - dynamodb:GetItem
-                - dynamodb:Query
-                - dynamodb:UpdateItem
-              Resource:
-                - !GetAtt UsersTable.Arn
-                - !GetAtt TutorStudentsTable.Arn
-                - !Sub "${TutorStudentsTable.Arn}/index/*"
+          - Effect: Allow
+            Action:
+              - cognito-idp:AdminInitiateAuth
+              - cognito-idp:AdminCreateUser
+              - cognito-idp:AdminSetUserPassword
+              - cognito-idp:SignUp
+              - cognito-idp:InitiateAuth
+              - cognito-idp:GetUser
+              - cognito-idp:AdminGetUser
+              - cognito-idp:ConfirmSignUp
+            Resource: !GetAtt UserPool.Arn
+          - Effect: Allow
+            Action:
+              - dynamodb:PutItem
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:UpdateItem
+            Resource:
+              - !GetAtt UsersTable.Arn
+              - !GetAtt TutorStudentsTable.Arn
+              - !Sub "${TutorStudentsTable.Arn}/index/*"
       Events:
         API1:
           Type: Api
@@ -1402,16 +1314,6 @@ Resources:
       RouteKey: $connect
       Target: !Sub 'integrations/${WebSocketIntegration}'
 
-  # dashboard Route
-  DashboardRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: dashboard
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-
-
   # $disconnect Route
   DisconnectRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -1481,7 +1383,21 @@ Resources:
         - Name: QueueName
           Value: !GetAtt FeedbackDLQ.QueueName
 
-# ✅ 수정: 주석 처리된 불필요한 코드 삭제
+#  # Lambda에 WebSocket 연결 관리 권한 부여
+#  WebSocketPolicy:
+#    Type: AWS::IAM::Policy
+#    Properties:
+#      PolicyName: WebSocketManageConnectionsPolicy
+#      PolicyDocument:
+#        Version: '2012-10-17'
+#        Statement:
+#          - Effect: Allow
+#            Action:
+#              - 'execute-api:ManageConnections'
+#            Resource:
+#              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+#      Roles:
+#        - !Ref SentencesWebSocketFunctionRole
 
 
 Outputs:
@@ -1594,16 +1510,3 @@ Outputs:
     Value: !Ref FeedbackDLQ
     Export:
       Name: !Sub '${AWS::StackName}-FeedbackDLQUrl'
-
-
-  DashboardQueueUrl:
-    Description: Dashboard SQS Queue URL
-    Value: !Ref DashboardQueue
-    Export:
-      Name: !Sub '${AWS::StackName}-DashboardQueueUrl'
-
-  DashboardQueueArn:
-    Description: Dashboard SQS Queue ARN
-    Value: !GetAtt DashboardQueue.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-DashboardQueueArn'

@@ -23,25 +23,15 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
     public APIGatewayV2WebSocketResponse handleRequest(APIGatewayV2WebSocketEvent event, Context context) {
 
         String routeKey = event.getRequestContext().getRouteKey();
-        context.getLogger().log("Route!!: " + routeKey);
-
+        context.getLogger().log("Route: " + routeKey);
 
         try {
             switch (routeKey) {
                 case "$connect":
-                    context.getLogger().log("$connect.getbody: " + event.getBody());
-                    return handleConnect(event,context);
+                    return handleConnect(event, context);
 
                 case "$disconnect":
-                    context.getLogger().log("Disconnect!!");
-                    String connectionId = event.getRequestContext().getConnectionId();
-                    return socketService.handleDisconnect(connectionId);
-
-                case "dashboard":
-                    context.getLogger().log("📊 dashboard 인증 요청");
-                    context.getLogger().log("$dashboard.getbody: " + event.getBody());
-
-                    return socketService.handleDashboard(event);
+                    return socketService.handleDisconnect(event, event.getRequestContext().getConnectionId());
 
                 case "status":
                     Type type = new TypeToken<WebSocketRequest<StatusRequest>>(){}.getType();
@@ -52,7 +42,7 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
 
                 case "$default":
                 default:
-                    return createResponse(400, "Unsupported route!: " + routeKey);
+                    return createResponse(400, "Unsupported route: " + routeKey);
             }
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
@@ -60,12 +50,33 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
         }
     }
 
+    // 로그인 후 start inactive
+    // 방 (ai, 문장) 입장 시 active -> 5초에 한번 씩 상태 전달
     private APIGatewayV2WebSocketResponse handleConnect(APIGatewayV2WebSocketEvent event, Context context) {
         String connectionId = event.getRequestContext().getConnectionId();
-        context.getLogger().log("Client connected: " + connectionId);
+        
+        // 쿼리 파라미터에서 user_email 추출
+        String userEmail = null;
+        if (event.getQueryStringParameters() != null) {
+            userEmail = event.getQueryStringParameters().get("user_email");
+        }
+        
+        context.getLogger().log("Client connected: " + connectionId + " | User: " + userEmail);
+        
+        // CONNECTIONS_TABLE에 connectionId 저장 (튜터 피드백용)
+        if (userEmail != null && !userEmail.isEmpty()) {
+            socketService.saveConnection(connectionId, userEmail);
+        }
 
-        return createResponse(200, "Connected!!!");
+        return createResponse(200, "Connected");
     }
+
+//    private APIGatewayV2WebSocketResponse handleDisconnect(APIGatewayV2WebSocketEvent event, Context context) {
+//        String connectionId = event.getRequestContext().getConnectionId();
+//        context.getLogger().log("Client disconnected: " + connectionId);
+//
+//        return createResponse(200, "Disconnected");
+//    }
 
 
     public static APIGatewayV2WebSocketResponse createResponse(int statusCode, String message) {
