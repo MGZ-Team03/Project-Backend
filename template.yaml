@@ -599,6 +599,44 @@ Resources:
       FifoQueue: true
       MessageRetentionPeriod: 1209600
 
+  # Profile Images S3 Bucket
+  ProfileImagesBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3000
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Name
+          Value: Profile Images Bucket
+
+  # Profile Images Bucket Policy (Public Read)
+  ProfileImagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProfileImagesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${ProfileImagesBucket.Arn}/*'
+
   # TTS Audio S3 Bucket
   TTSBucket:
     Type: AWS::S3::Bucket
@@ -1169,6 +1207,7 @@ Resources:
           CLIENT_ID: !Ref UserPoolClient
           USERS_TABLE: !Ref UsersTable
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          PROFILE_IMAGES_BUCKET: !Ref ProfileImagesBucket
       Policies:
         - Statement:
           - Effect: Allow
@@ -1192,6 +1231,12 @@ Resources:
               - !GetAtt UsersTable.Arn
               - !GetAtt TutorStudentsTable.Arn
               - !Sub "${TutorStudentsTable.Arn}/index/*"
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+            Resource:
+              - !Sub '${ProfileImagesBucket.Arn}/*'
       Events:
         API1:
           Type: Api
@@ -1235,6 +1280,20 @@ Resources:
               Ref: MyApi
             Path: /api/auth
             Method: get
+        API7:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/auth/profile
+            Method: put
+        API8:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/auth/profile/image
+            Method: post
 
     Metadata:
       SamResourceId: AuthFunction
