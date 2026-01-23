@@ -22,6 +22,8 @@ import java.util.Map;
 import static com.amazonaws.services.lambda.runtime.LambdaRuntime.getLogger;
 import static websocket.controller.SocketController.createResponse;
 
+
+
 /**
  * Connect 시 호출: 존재 여부 확인 후 분기 처리
  * - 존재하면: status를 "idle"로 업데이트

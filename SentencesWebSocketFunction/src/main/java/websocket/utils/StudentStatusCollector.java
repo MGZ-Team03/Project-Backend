@@ -69,21 +69,16 @@ public class StudentStatusCollector {
                 String studentEmail = record.get("student_email").s();
                 String tutorEmail = record.get("tutor_email").s();
 
-                // ✅ 튜터 자신의 연결인지 체크 (튜터 대시보드 연결은 제외)
-                if (studentEmail.equals(tutorEmail)) {
-                    getLogger().log("⚠️ 튜터 자신의 연결, 스킵: " + tutorEmail);
-                    continue;
-                }
 
                 String room = record.containsKey("room") && record.get("room") != null && !"no room".equals(record.get("room").s())
                         ? record.get("room").s()
                         : "idle";
 
-                String connectionId = record.containsKey("connectionId") && record.get("connectionId") != null
-                        ? record.get("connectionId").s()
-                        : null;
+                String isActive = record.get("status").s();
 
-                StudentStatusDto status = collectStudentStatus(studentEmail, tutorEmail, room, connectionId);
+                getLogger().log("isActive: " + isActive);
+
+                StudentStatusDto status = collectStudentStatus(studentEmail, tutorEmail, room, isActive);
                 studentStatuses.add(status);
 
             } catch (Exception e) {
@@ -164,23 +159,18 @@ public class StudentStatusCollector {
     private StudentStatusDto collectStudentStatus(String studentEmail,
                                                   String tutorEmail,
                                                   String room,
-                                                  String connectionId) {
+                                                  String isActive
+                                                  ) {
 
         try {
-            getLogger().log("=== 학생 상태 수집 ===");
-            getLogger().log("학생: " + studentEmail);
-            getLogger().log("튜터: " + tutorEmail);
-            getLogger().log("방: " + room);
-            getLogger().log("연결ID: " + connectionId);
+            getLogger().log("=== 학생 상태 수집 | 학생: " + studentEmail
+                    + " | 튜터: " + tutorEmail
+                    + " | 방: " + room + " ===");
 
             String studentName = getStudentName(studentEmail);
 
-            // ✅ 버그 수정: isEmpty() → !isEmpty()
-            boolean isConnected = connectionId != null && !connectionId.isEmpty();
-            getLogger().log("연결 상태: " + (isConnected ? "로그인" : "로그아웃"));
-
             // 최근 5분 이내 세션 조회 (연결된 경우만)
-            Map<String, Object> recentSession = isConnected ? getRecentSession(studentEmail) : null;
+            Map<String, Object> recentSession = getRecentSession(studentEmail);
 
             // 기본값 설정
             String status = "inactive";
@@ -192,13 +182,13 @@ public class StudentStatusCollector {
             String lastActive = null;
 
             // 📊 상태 결정 로직
-            if (isConnected && !Objects.equals(room, "no room") && !room.isEmpty()) {
+            if (isActive.equals("active") &&!Objects.equals(room, "no room") && !room.isEmpty()) {
                 getLogger().log("✅ 유효한 방에 입장: " + room);
                 activity = room;  // "sentence" or "ai"
 
                 if (recentSession != null) {
                     // 최근 활동 있음
-                    speakingRatio = (Integer) recentSession.getOrDefault("speaking_ratio", 0);
+                    speakingRatio = (Integer) recentSession.getOrDefault("speaking_ration", 0);
                     duration = (Integer) recentSession.getOrDefault("duration", 0);
 
                     if (speakingRatio > 0) {
@@ -220,7 +210,7 @@ public class StudentStatusCollector {
                     alert = true;
                     getLogger().log("💤 방에는 있지만 활동 없음");
                 }
-            } else if(isConnected){
+            } else if(isActive.equals("active") && room.equals("no room")) {
                 // ✅ 연결은 되어 있지만 유효한 방이 없음
                 status = "idle";      // 🔴
                 alert = true;         // 개입 필요!
@@ -292,16 +282,17 @@ public class StudentStatusCollector {
 
             QueryRequest queryRequest = QueryRequest.builder()
                     .tableName(sessionsTable)
-                    .keyConditionExpression("student_email = :student_email AND :timestamp > #ts")
-                    .expressionAttributeValues(expressionValues)
-                    .expressionAttributeNames(expressionNames)  // ✅ 추가!
+                    .keyConditionExpression("student_email = :student_email")
+                    .expressionAttributeValues(Map.of(
+                    ":student_email", AttributeValue.builder().s(studentEmail).build()
+            ))
                     .scanIndexForward(false)
                     .limit(1)
                     .build();
 
 
             QueryResponse response = dynamoDbClient.query(queryRequest);
-            getLogger().log("조회된 항목 수: " + response.items().size());
+
 
             if (response.items().isEmpty()) {
                 getLogger().log("❌ 5분 이내 세션 없음");
@@ -311,15 +302,22 @@ public class StudentStatusCollector {
             Map<String, AttributeValue> item = response.items().getFirst();
             getLogger().log("✅ 세션 발견!");
 
+            if (item.containsKey("speaking_ratio")) {
+                getLogger().log("speaking_ration: " + item.get("speaking_ration").n());
+            }
+            if (item.containsKey("duration")) {
+                getLogger().log("duration: " + item.get("duration").n());
+            }
+
 
             Map<String, Object> session = new HashMap<>();
 
-            session.put("speaking_ratio", item.containsKey("speaking_ratio")
-                    ? Integer.parseInt(item.get("speaking_ratio").n()) : 0);
+            session.put("speaking_ratio", item.containsKey("speaking_ration")
+                    ? Integer.parseInt(item.get("speaking_ration").n()) : 0);
             session.put("duration", item.containsKey("duration")
                     ? Integer.parseInt(item.get("duration").n()) / 60 : 0);
 
-            getLogger().log("speaking_ratio: " + session.get("speaking_ratio"));
+            getLogger().log("speaking_ratio: " + session.get("speaking_ration"));
             getLogger().log("duration: " + session.get("duration") + "분");
             getLogger().log("========================================");
 

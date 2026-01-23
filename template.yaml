@@ -729,7 +729,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: StudentStatusFunction
-      Handler: com.peaktracker.student-status.StudentStatusHandler::handleRequest
+      Handler: com.speaktracker.studentstatus.StudentStatusHandler::handleRequest
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Environment:
         Variables:
@@ -741,31 +741,17 @@ Resources:
           Properties:
             RestApiId:
               Ref: MyApi
-            Path: /api/tutor/students
+            Path: /api/student-status
             Method: get
         API2:
           Type: Api
           Properties:
             RestApiId:
               Ref: MyApi
-            Path: /api/tutor/students/{email}
-            Method: get
-        API3:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/tutor/students/{email}/history
-            Method: get
-        API4:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/tutor/feedback
+            Path: /api/student-status
             Method: post
     Metadata:
-      SamResourceId: TutorFunction
+      SamResourceId: StudentStatusFunction
 
   SentencesWebSocketFunction:
     Type: AWS::Serverless::Function
@@ -929,6 +915,10 @@ Outputs:
   AuthUrl:
     Value:
       Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/auth
+  StudentStatusApiEndpoint:
+    Description: "API Gateway endpoint URL for Student Status"
+    Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/student-status"
+
   UserPoolId:
     Description: Cognito User Pool ID
     Value: !Ref UserPool
@@ -982,6 +972,8 @@ Outputs:
     Value: !Ref FeedbackMessagesTable
     Export:
       Name: !Sub '${AWS::StackName}-FeedbackMessagesTable'
+
+
 
   WebSocketConnectionsTableName:
     Description: WebSocket Connections Table Name

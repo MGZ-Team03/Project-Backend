@@ -22,7 +22,7 @@ public class SocketRepository {
     String connectionTable = System.getenv("CONNECTIONS_TABLE");
 
     public void saveTutorStudent(StatusRequest request, APIGatewayV2WebSocketEvent event) {
-        getLogger().log("=== Repository 실행 ===");
+        getLogger().log("=== Repository.saveTutorStudent 실행 ===");
 
         Map<String, AttributeValue> item = save(request, event);
 
@@ -46,13 +46,18 @@ public class SocketRepository {
         HashMap<String, AttributeValue> item = new HashMap<>();
         String connectionId = event.getRequestContext().getConnectionId();
 
+        String tutorEmail = request.getTutorEmail();
 
-        if ("undefined".equalsIgnoreCase(request.getTutorEmail()) ||
-                "unknown@example.com".equals(request.getTutorEmail())) {
-            getLogger().log("❌❌❌ CRITICAL: tutorEmail이 유효하지 않습니다: " + request.getTutorEmail());
-            getLogger().log("프론트엔드에서 올바른 tutorEmail을 전달해주세요!");
-            throw new IllegalArgumentException("유효하지 않은 tutorEmail: " + request.getTutorEmail());
+        if ("undefined".equalsIgnoreCase(tutorEmail)
+                || "unknown@example.com".equalsIgnoreCase(tutorEmail)) {
+
+            String errorMsg = "❌ CRITICAL: 유효하지 않은 tutorEmail = " + tutorEmail
+                    + " (프론트엔드에서 올바른 tutorEmail 전달 필요)";
+
+            getLogger().log(errorMsg);
+            throw new IllegalArgumentException(errorMsg);
         }
+
 
         // .fromS() 대신 .s() 사용
         item.put("tutor_email", AttributeValue.builder().s(request.getTutorEmail()).build());
@@ -224,22 +229,6 @@ public class SocketRepository {
         }
     }
 
-    public Optional<Map<String, AttributeValue>> getConnection(String connectionId) {
-        Map<String, AttributeValue> key = new HashMap<>();
-        key.put("connection_id", AttributeValue.builder().s(connectionId).build());
-
-        GetItemRequest request = GetItemRequest.builder()
-                .tableName(tutorStudentsTableName)
-                .key(key)
-                .build();
-
-        GetItemResponse response = dynamoDbClient.getItem(request);
-
-        if (response.hasItem() && !response.item().isEmpty()) {
-            return Optional.of(response.item());
-        }
-        return Optional.empty();
-    }
     // connection 존재 여부
     public boolean existsByConnectionId(String connectionId) {
         getLogger().log("=== Repository: Check Connection Exists ===");
