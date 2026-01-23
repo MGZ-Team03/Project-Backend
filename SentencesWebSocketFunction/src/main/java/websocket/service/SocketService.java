@@ -8,7 +8,6 @@ import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.apigatewaymanagementapi.ApiGatewayManagementApiClient;
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.GoneException;
 import software.amazon.awssdk.services.apigatewaymanagementapi.model.PostToConnectionRequest;
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import websocket.dto.EmailRequest;
 import websocket.dto.StatusRequest;
 import websocket.dto.WebSocketRequest;
@@ -48,22 +47,23 @@ public class SocketService {
     }
 
     /**
-     * Disconnect 시 호출: status를 "inactive"로 업데이트
+     * 사용 안함 정리예정
+     *
      */
-    public APIGatewayV2WebSocketResponse handleDisconnect(String connectionId) {
-        getLogger().log("=== Service: Handle Disconnect === ConnectionID: " + connectionId);
-
-
-        boolean success = socketRepository.handleDisConnect(connectionId);
-
-        if (success) {
-            getLogger().log("handleDisconnect.reqeust: disconnected.success");
-            return createResponse(200, "disconnected");
-        } else {
-            getLogger().log("student not found.handledisconnect");
-            return createResponse(404, "student not found");
-        }
-    }
+//    public APIGatewayV2WebSocketResponse handleDisconnect(String connectionId) {
+//        getLogger().log("=== Service: Handle Disconnect === ConnectionID: " + connectionId);
+//
+//
+//        boolean success = socketRepository.handleDisConnect(connectionId);
+//
+//        if (success) {
+//            getLogger().log("handleDisconnect.reqeust: disconnected.success");
+//            return createResponse(200, "disconnected");
+//        } else {
+//            getLogger().log("student not found.handledisconnect");
+//            return createResponse(404, "student not found");
+//        }
+//    }
     /**
      * status 업데이트
      */

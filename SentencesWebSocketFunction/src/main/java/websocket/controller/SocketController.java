@@ -32,10 +32,10 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
                     context.getLogger().log("$connect.getbody: " + event.getBody());
                     return handleConnect(event,context);
 
-                case "$disconnect":
-                    context.getLogger().log("Disconnect!!");
-                    String connectionId = event.getRequestContext().getConnectionId();
-                    return socketService.handleDisconnect(connectionId);
+//                case "$disconnect":
+//                    context.getLogger().log("Disconnect!!");
+//                    String connectionId = event.getRequestContext().getConnectionId();
+//                    return socketService.handleDisconnect(connectionId);
 
                 case "dashboard":
                     context.getLogger().log(

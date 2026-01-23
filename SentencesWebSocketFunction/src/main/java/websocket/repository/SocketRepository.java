@@ -245,62 +245,62 @@ public class SocketRepository {
         return response.hasItem();
     }
 
-
-    public boolean handleDisConnect(String connectionId) {  // connectionId가 아니라 studentEmail
-        getLogger().log("=== Repository: Handle Disconnect by ConnectionId ===");
-
-        try {
-            // 1단계: connectionId로 찾기 (Scan 또는 GSI 필요)
-            Map<String, AttributeValue> eav = new HashMap<>();
-            eav.put(":cid", AttributeValue.builder().s(connectionId).build());
-
-            ScanRequest scanRequest = ScanRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .filterExpression("connectionId = :cid")
-                    .expressionAttributeValues(eav)
-                    .build();
-
-            ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
-
-            if (scanResponse.items().isEmpty()) {
-                getLogger().log("⚠️ Connection not found");
-                return false;
-            }
-
-            Map<String, AttributeValue> item = scanResponse.items().get(0);
-
-            // 2단계: 실제 PK로 업데이트
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("tutor_email", item.get("tutor_email"));
-            key.put("student_email", item.get("student_email"));
-
-            // 3단계: status를 inactive로 + connectionId 제거 + room: no room
-            //
-            Map<String, AttributeValue> attributeValues = new HashMap<>();
-            attributeValues.put(":status", AttributeValue.builder().s("inactive").build());
-            attributeValues.put(":room", AttributeValue.builder().s("no room").build());
-
-            Map<String, String> attributeNames = new HashMap<>();
-            attributeNames.put("#status", "status");
-            attributeNames.put("#room", "room");
-
-            UpdateItemRequest request = UpdateItemRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .key(key)
-                    .updateExpression("SET #status = :status, #room = :room REMOVE connectionId")
-                    .expressionAttributeNames(attributeNames)
-                    .expressionAttributeValues(attributeValues)
-                    .build();
-
-            dynamoDbClient.updateItem(request);
-            getLogger().log("✅ Status updated to inactive, room set to 'no room', and connectionId removed");
-            return true;
-
-        } catch (Exception e) {
-            getLogger().log("❌ Failed to update: " + e.getMessage());
-            return false;
-        }
-    }
+    // 사용 안함
+//    public boolean handleDisConnect(String connectionId) {  // connectionId가 아니라 studentEmail
+//        getLogger().log("=== Repository: Handle Disconnect by ConnectionId ===");
+//
+//        try {
+//            // 1단계: connectionId로 찾기 (Scan 또는 GSI 필요)
+//            Map<String, AttributeValue> eav = new HashMap<>();
+//            eav.put(":cid", AttributeValue.builder().s(connectionId).build());
+//
+//            ScanRequest scanRequest = ScanRequest.builder()
+//                    .tableName(tutorStudentsTableName)
+//                    .filterExpression("connectionId = :cid")
+//                    .expressionAttributeValues(eav)
+//                    .build();
+//
+//            ScanResponse scanResponse = dynamoDbClient.scan(scanRequest);
+//
+//            if (scanResponse.items().isEmpty()) {
+//                getLogger().log("⚠️ Connection not found");
+//                return false;
+//            }
+//
+//            Map<String, AttributeValue> item = scanResponse.items().get(0);
+//
+//            // 2단계: 실제 PK로 업데이트
+//            Map<String, AttributeValue> key = new HashMap<>();
+//            key.put("tutor_email", item.get("tutor_email"));
+//            key.put("student_email", item.get("student_email"));
+//
+//            // 3단계: status를 inactive로 + connectionId 제거 + room: no room
+//            //
+//            Map<String, AttributeValue> attributeValues = new HashMap<>();
+//            attributeValues.put(":status", AttributeValue.builder().s("inactive").build());
+//            attributeValues.put(":room", AttributeValue.builder().s("no room").build());
+//
+//            Map<String, String> attributeNames = new HashMap<>();
+//            attributeNames.put("#status", "status");
+//            attributeNames.put("#room", "room");
+//
+//            UpdateItemRequest request = UpdateItemRequest.builder()
+//                    .tableName(tutorStudentsTableName)
+//                    .key(key)
+//                    .updateExpression("SET #status = :status, #room = :room REMOVE connectionId")
+//                    .expressionAttributeNames(attributeNames)
+//                    .expressionAttributeValues(attributeValues)
+//                    .build();
+//
+//            dynamoDbClient.updateItem(request);
+//            getLogger().log("✅ Status updated to inactive, room set to 'no room', and connectionId removed");
+//            return true;
+//
+//        } catch (Exception e) {
+//            getLogger().log("❌ Failed to update: " + e.getMessage());
+//            return false;
+//        }
+//    }
 
     public String getTutorConnectionIds(String tutorEmail) {
 
