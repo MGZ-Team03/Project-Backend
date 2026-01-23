@@ -23,8 +23,7 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
     public APIGatewayV2WebSocketResponse handleRequest(APIGatewayV2WebSocketEvent event, Context context) {
 
         String routeKey = event.getRequestContext().getRouteKey();
-        context.getLogger().log("Route!!: " + routeKey);
-
+        context.getLogger().log("Route: " + routeKey);
 
         try {
             switch (routeKey) {
@@ -53,7 +52,7 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
 
                 case "$default":
                 default:
-                    return createResponse(400, "Unsupported route!: " + routeKey);
+                    return createResponse(400, "Unsupported route: " + routeKey);
             }
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());

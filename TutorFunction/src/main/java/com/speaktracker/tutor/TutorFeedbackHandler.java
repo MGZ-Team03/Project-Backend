@@ -20,7 +20,9 @@ import java.net.URI;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,6 +38,8 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
 
     private static final String FEEDBACK_TABLE = System.getenv("FEEDBACK_TABLE");
     private static final String CONNECTIONS_TABLE = System.getenv("CONNECTIONS_TABLE");
+    private static final String TUTOR_STUDENTS_TABLE = System.getenv("TUTOR_STUDENTS_TABLE");
+    private static final String USERS_TABLE = System.getenv("USERS_TABLE");
     private static final String WEBSOCKET_ENDPOINT = System.getenv("WEBSOCKET_ENDPOINT");
     private static final String FEEDBACK_QUEUE_URL = System.getenv("FEEDBACK_QUEUE_URL");
     
@@ -59,13 +63,21 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
         context.getLogger().log("📩 Received request: " + input.getPath() + " " + input.getHttpMethod());
 
         try {
+            String path = input.getPath();
+            String method = input.getHttpMethod();
+            
+            // GET /api/tutor/students - 담당 학생 목록 조회
+            if ("GET".equals(method) && path.equals("/api/tutor/students")) {
+                return handleGetStudents(input, context);
+            }
+            
             // POST /api/tutor/feedback
-            if ("POST".equals(input.getHttpMethod()) && input.getPath().contains("/feedback")) {
+            if ("POST".equals(method) && path.contains("/feedback")) {
                 return handlePostFeedback(input, context);
             }
 
             // GET /api/tutor/feedback
-            if ("GET".equals(input.getHttpMethod()) && input.getPath().contains("/feedback")) {
+            if ("GET".equals(method) && path.contains("/feedback")) {
                 return handleGetFeedback(input, context);
             }
 
@@ -76,6 +88,97 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
             e.printStackTrace();
             return createResponse(500, createErrorResponse("Internal server error: " + e.getMessage()));
         }
+    }
+
+    /**
+     * GET 담당 학생 목록 조회
+     */
+    private APIGatewayProxyResponseEvent handleGetStudents(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            // Cognito에서 튜터 이메일 추출
+            String tutorEmail = extractUserEmail(input, context);
+            if (tutorEmail == null) {
+                return createResponse(401, createErrorResponse("Unauthorized"));
+            }
+            
+            context.getLogger().log("📚 학생 목록 조회 - 튜터: " + tutorEmail);
+            
+            // tutor-students 테이블에서 해당 튜터의 학생 조회
+            QueryResponse queryResponse = dynamoDbClient.query(QueryRequest.builder()
+                    .tableName(TUTOR_STUDENTS_TABLE)
+                    .keyConditionExpression("tutor_email = :tutorEmail")
+                    .expressionAttributeValues(Map.of(
+                            ":tutorEmail", AttributeValue.builder().s(tutorEmail).build()
+                    ))
+                    .build());
+            
+            List<Map<String, Object>> students = new ArrayList<>();
+            
+            for (Map<String, AttributeValue> item : queryResponse.items()) {
+                String studentEmail = item.get("student_email").s();
+                String assignedAt = item.containsKey("assigned_at") ? item.get("assigned_at").s() : null;
+                String status = item.containsKey("status") ? item.get("status").s() : "active";
+                
+                // 학생 정보 조회
+                String studentName = getStudentName(studentEmail, context);
+                
+                Map<String, Object> student = new HashMap<>();
+                student.put("studentEmail", studentEmail);
+                student.put("studentName", studentName);
+                student.put("assignedAt", assignedAt);
+                student.put("status", status);
+                
+                students.add(student);
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("data", Map.of("students", students));
+            
+            context.getLogger().log("✅ 학생 목록 조회 완료: " + students.size() + "명");
+            return createResponse(200, gson.toJson(result));
+            
+        } catch (Exception e) {
+            context.getLogger().log("❌ 학생 목록 조회 실패: " + e.getMessage());
+            return createResponse(500, createErrorResponse("Failed to get students: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * 학생 이름 조회
+     */
+    private String getStudentName(String studentEmail, Context context) {
+        try {
+            GetItemResponse response = dynamoDbClient.getItem(GetItemRequest.builder()
+                    .tableName(USERS_TABLE)
+                    .key(Map.of("email", AttributeValue.builder().s(studentEmail).build()))
+                    .build());
+            
+            if (response.hasItem() && response.item().containsKey("name")) {
+                return response.item().get("name").s();
+            }
+            return studentEmail.split("@")[0]; // 이름이 없으면 이메일 앞부분 사용
+        } catch (Exception e) {
+            context.getLogger().log("⚠️ 학생 이름 조회 실패: " + studentEmail);
+            return studentEmail.split("@")[0];
+        }
+    }
+    
+    /**
+     * Cognito에서 사용자 이메일 추출
+     */
+    private String extractUserEmail(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            Map<String, Object> authorizer = input.getRequestContext().getAuthorizer();
+            if (authorizer != null && authorizer.containsKey("claims")) {
+                @SuppressWarnings("unchecked")
+                Map<String, String> claims = (Map<String, String>) authorizer.get("claims");
+                return claims.get("email");
+            }
+        } catch (Exception e) {
+            context.getLogger().log("⚠️ 사용자 이메일 추출 실패: " + e.getMessage());
+        }
+        return null;
     }
 
     /**

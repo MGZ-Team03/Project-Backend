@@ -15,6 +15,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import com.speaktracker.auth.dto.AuthResponse;
 import com.speaktracker.auth.dto.ConfirmRequest;
 import com.speaktracker.auth.dto.LoginRequest;
+import com.speaktracker.auth.dto.RefreshRequest;
 import com.speaktracker.auth.dto.RegisterRequest;
 import com.speaktracker.auth.dto.UserResponse;
 import com.speaktracker.auth.exception.AuthException;
@@ -31,6 +32,7 @@ import com.speaktracker.auth.service.UserService;
  * - POST /api/auth/register : 회원가입 (Cognito + DynamoDB)
  * - POST /api/auth/login : 로그인 (Cognito)
  * - POST /api/auth/confirm : 이메일 인증 확인
+ * - POST /api/auth/refresh : 토큰 갱신 (RefreshToken)
  * - GET /api/auth/user : 사용자 정보 조회 (JWT 필요)
  * - GET /api/auth : 테스트 엔드포인트
  */
@@ -76,6 +78,10 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
             // POST /api/auth/confirm
             else if ("POST".equals(httpMethod) && path.endsWith("/confirm")) {
                 return handleConfirm(input, context);
+            }
+            // POST /api/auth/refresh
+            else if ("POST".equals(httpMethod) && path.endsWith("/refresh")) {
+                return handleRefresh(input, context);
             }
             // GET /api/auth/user
             else if ("GET".equals(httpMethod) && path.endsWith("/user")) {
@@ -142,6 +148,23 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
         } catch (Exception e) {
             context.getLogger().log("Confirm error: " + e.getMessage());
             return createResponse(500, Map.of("error", "인증 실패"));
+        }
+    }
+    
+    /**
+     * 토큰 갱신 처리
+     */
+    private APIGatewayProxyResponseEvent handleRefresh(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            RefreshRequest request = objectMapper.readValue(input.getBody(), RefreshRequest.class);
+            AuthResponse response = authService.refreshToken(request.getRefreshToken());
+            return createResponse(200, response);
+        } catch (AuthException e) {
+            context.getLogger().log("Refresh error: " + e.getMessage());
+            return createResponse(401, Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("Refresh error: " + e.getMessage());
+            return createResponse(500, Map.of("error", "토큰 갱신 실패"));
         }
     }
     

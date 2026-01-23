@@ -4,6 +4,7 @@ import java.util.List;
 
 public class SentenceGenerateResponse {
     private boolean success;
+    private String sessionId;
     private List<Sentence> sentences;
     private String topic;
     private String difficulty;
@@ -43,6 +44,14 @@ public class SentenceGenerateResponse {
 
     public void setSentences(List<Sentence> sentences) {
         this.sentences = sentences;
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
     }
 
     public String getTopic() {
