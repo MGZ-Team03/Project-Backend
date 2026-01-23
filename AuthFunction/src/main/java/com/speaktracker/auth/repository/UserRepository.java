@@ -81,7 +81,48 @@ public class UserRepository {
         if (item.containsKey("user_sub")) {
             user.setUserSub(item.get("user_sub").s());
         }
+        if (item.containsKey("profile_image")) {
+            user.setProfileImage(item.get("profile_image").s());
+        }
+        if (item.containsKey("learning_level")) {
+            user.setLearningLevel(item.get("learning_level").s());
+        }
         
         return user;
+    }
+    
+    /**
+     * 사용자 정보 업데이트
+     * @param user 업데이트할 사용자
+     */
+    public void update(User user) {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("email", AttributeValue.builder().s(user.getEmail()).build());
+        item.put("name", AttributeValue.builder().s(user.getName()).build());
+        item.put("role", AttributeValue.builder().s(user.getRole()).build());
+        item.put("created_at", AttributeValue.builder().s(user.getCreatedAt()).build());
+        
+        if (user.getUserSub() != null) {
+            item.put("user_sub", AttributeValue.builder().s(user.getUserSub()).build());
+        }
+        if (user.getProfileImage() != null) {
+            item.put("profile_image", AttributeValue.builder().s(user.getProfileImage()).build());
+        }
+        if (user.getLearningLevel() != null) {
+            item.put("learning_level", AttributeValue.builder().s(user.getLearningLevel()).build());
+        }
+        
+        // 튜터인 경우 기존 값 유지를 위해 조건부 처리
+        if ("tutor".equals(user.getRole())) {
+            item.put("max_students", AttributeValue.builder().n("10").build());
+            item.put("is_accepting", AttributeValue.builder().bool(true).build());
+        }
+        
+        PutItemRequest putItemRequest = PutItemRequest.builder()
+            .tableName(usersTable)
+            .item(item)
+            .build();
+        
+        dynamoDbClient.putItem(putItemRequest);
     }
 }

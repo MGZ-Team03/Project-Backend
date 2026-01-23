@@ -81,11 +81,11 @@ public class SocketService {
         getLogger().log("Current DB Status: " + currentStatus);
         getLogger().log("Requested Status: " + request.getStatus());
 
-        // 아이템이 존재하지 않는 경우 - 새로 생성
+        // 아이템이 존재하지 않는 경우 - 무시 (튜터 등록 승인 후에만 관계가 생성되어야 함)
         if (currentStatus == null) {
-            getLogger().log("✨ Creating new tutor-student relationship");
-            socketRepository.saveTutorStudent(request);
-            getLogger().log("Status created: " + request.getStatus());
+            getLogger().log("⚠️ Tutor-Student relationship not found, ignoring status update");
+            getLogger().log("Tutor: " + request.getTutorEmail() + ", Student: " + request.getStudentEmail());
+            return createResponse(404, "Tutor-Student relationship not found");
         }
         // 아이템은 존재하지만 상태가 다른 경우 - 업데이트
         else if (!request.getStatus().equals(currentStatus)) {

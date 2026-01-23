@@ -170,8 +170,9 @@ public class SocketRepository {
             getLogger().log("✅ Connection saved successfully");
 
         } catch (DynamoDbException e) {
+            // 연결 저장 실패해도 WebSocket 연결은 유지 (연결 실패 방지)
             getLogger().log("❌ Failed to save connection: " + e.getMessage());
-            throw new RuntimeException("Failed to save connection", e);
+            getLogger().log("⚠️ Connection will proceed without persistence");
         }
     }
 
