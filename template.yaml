@@ -1762,23 +1762,6 @@ Resources:
         - Name: QueueName
           Value: !GetAtt FeedbackDLQ.QueueName
 
-#  # Lambda에 WebSocket 연결 관리 권한 부여
-#  WebSocketPolicy:
-#    Type: AWS::IAM::Policy
-#    Properties:
-#      PolicyName: WebSocketManageConnectionsPolicy
-#      PolicyDocument:
-#        Version: '2012-10-17'
-#        Statement:
-#          - Effect: Allow
-#            Action:
-#              - 'execute-api:ManageConnections'
-#            Resource:
-#              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-#      Roles:
-#        - !Ref SentencesWebSocketFunctionRole
-
-
 Outputs:
   ApiEndpoint:
     Description: API Gateway Base URL
