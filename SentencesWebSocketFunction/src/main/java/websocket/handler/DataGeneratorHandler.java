@@ -97,7 +97,9 @@ public class DataGeneratorHandler implements RequestHandler <Map<String,Object>,
 
             Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
             expressionAttributeValues.put(":role", AttributeValue.builder().s("tutor").build());
+
             getLogger().log("user_table: "+System.getenv("USERS_TABLE"));
+
             ScanRequest scanRequest = ScanRequest.builder()
                     .tableName(System.getenv("USERS_TABLE"))
                     .filterExpression("#role = :role")  // ✅ #role 사용

@@ -17,8 +17,10 @@ public class StudentStatusService {
      * 학생 상태 저장 (저장만!)
      */
     public StudentStatusResponse saveStudentStatus(StudentStatusEventRequest request) {
-        getLogger().log("getTutorEmail"+request.getData().getTutorEmail());
-        getLogger().log("getStudentEmail"+request.getData().getStudentEmail());
+        getLogger().log(
+                "TutorEmail: " + request.getData().getTutorEmail()
+                        + " | StudentEmail: " + request.getData().getStudentEmail()
+        );
 
         // Repository 호출 - 저장만 함
         repository.saveStudentStatus(request.getData());

@@ -20,12 +20,12 @@ public class DashboardSQSHandler implements RequestHandler<SQSEvent, Void> {
         String tutorStudentsTableName = System.getenv("TUTOR_STUDENTS_TABLE");
         String wsEndpoint = System.getenv("WS_ENDPOINT");
 
-        getLogger().log("========================================");
-        getLogger().log("  DashboardSQSHandler 초기화");
-        getLogger().log("========================================");
-        getLogger().log("테이블: " + tutorStudentsTableName);
-        getLogger().log("WebSocket: " + wsEndpoint);
-
+        getLogger().log(
+                "=== DashboardSQSHandler 초기화"
+                        + " | 테이블: " + tutorStudentsTableName
+                        + " | WebSocket: " + wsEndpoint
+                        + " ==="
+        );
         SocketRepository socketRepository = new SocketRepository(
                 DynamoDbConfig.connectDynamoDb(),
                 tutorStudentsTableName
@@ -40,11 +40,12 @@ public class DashboardSQSHandler implements RequestHandler<SQSEvent, Void> {
     }
     @Override
     public Void handleRequest(SQSEvent event, Context context) {
-        context.getLogger().log("========================================");
-        context.getLogger().log("  SQS 이벤트 수신");
-        context.getLogger().log("========================================");
-        context.getLogger().log("메시지 수: " + event.getRecords().size());
-        context.getLogger().log("실행 시간: " + java.time.LocalDateTime.now());
+        context.getLogger().log(
+                "=== SQS 이벤트 수신"
+                        + " | 메시지 수: " + event.getRecords().size()
+                        + " | 실행 시간: " + java.time.LocalDateTime.now()
+                        + " ==="
+        );
 
         return controller.handleSQSMessages(event, context);
     }

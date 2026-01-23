@@ -38,8 +38,9 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
                     return socketService.handleDisconnect(connectionId);
 
                 case "dashboard":
-                    context.getLogger().log("📊 dashboard 인증 요청");
-                    context.getLogger().log("$dashboard.getbody: " + event.getBody());
+                    context.getLogger().log(
+                            String.format("📊 dashboard 인증 요청 | body: %s", event.getBody())
+                    );
 
                     return socketService.handleDashboard(event);
 

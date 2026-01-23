@@ -30,10 +30,12 @@ public class StudentStatusController {
         String path = event.getPath();
         String body = event.getBody();
 
-        getLogger().log("=== Controller 시작 ===");
-        getLogger().log("📍 HTTP Method: " + httpMethod);
-        getLogger().log("📍 Path: " + path);
-        getLogger().log("📥 받은 데이터: " + body);
+        getLogger().log(
+                "=== Controller 시작 | HTTP Method: " + httpMethod
+                        + " | Path: " + path
+                        + " | 받은 데이터: " + body
+                        + " ==="
+        );
 
         // POST만 처리
         if ("POST".equals(httpMethod)) {

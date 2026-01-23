@@ -22,10 +22,12 @@ public class StudentStatusRepository {
      * 학생 상태 저장
      */
     public void saveStudentStatus(StudentStatusRequest studentStatusRequest) {
-        getLogger().log("=== Repository 실행 ===");
-        getLogger().log("학생: " + studentStatusRequest.getStudentEmail());
-        getLogger().log("상태: " + studentStatusRequest.getStatus());
-        getLogger().log("방: " + studentStatusRequest.getRoom());
+        getLogger().log(
+                "=== Repository 실행 | 학생: " + studentStatusRequest.getStudentEmail()
+                        + " | 상태: " + studentStatusRequest.getStatus()
+                        + " | 방: " + studentStatusRequest.getRoom()
+                        + " ==="
+        );
 
         Map<String, AttributeValue> item = buildItem(studentStatusRequest);
 

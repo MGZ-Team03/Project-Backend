@@ -72,9 +72,12 @@ public class SocketRepository {
 
     public boolean existsTutorStudent(String tutorEmail, String studentEmail) {
         try{
-            getLogger().log("=== Repository: Check Exists ===");
-            getLogger().log("Tutor: " + tutorEmail);
-            getLogger().log("Student: " + studentEmail);
+            getLogger().log(
+                    "=== Repository: Check Exists"
+                            + " | Tutor: " + tutorEmail
+                            + " | Student: " + studentEmail
+                            + " ==="
+            );
 
             Map<String, AttributeValue> key = new HashMap<>();
             key.put("tutor_email", AttributeValue.fromS(tutorEmail));
@@ -99,11 +102,8 @@ public class SocketRepository {
 
     public void updateStatus(String connectionId,String room,String tutorEmail ,String studentEmail, String status) {
         try {
-            getLogger().log("=== Repository: Update Status ===");
-            getLogger().log("Table: " + tutorStudentsTableName);
-            getLogger().log("Tutor: " + tutorEmail);
-            getLogger().log("Student: " + studentEmail);
-            getLogger().log("New Status: " + status);
+            getLogger().log(
+                    "=== Repository: Update Status" + " | Table: " + tutorStudentsTableName + " | Tutor: " + tutorEmail + " | Student: " + studentEmail + " | New Status: " + status + " ===");
 
             Map<String, AttributeValue> key = new HashMap<>();
             key.put("tutor_email", AttributeValue.fromS(tutorEmail));
@@ -171,8 +171,7 @@ public class SocketRepository {
 
     public void saveConnection(APIGatewayV2WebSocketEvent event,String tutorEmail) {
         Map<String, AttributeValue> item = new HashMap<>();
-        getLogger().log("=== Repository: Save Connection ===");
-        getLogger().log("Tutor: " + tutorEmail);
+        getLogger().log("=== Repository: Save Connection | Tutor: " + tutorEmail + " ===");
 
         deleteOldConnections(tutorEmail);
 
@@ -303,20 +302,6 @@ public class SocketRepository {
         }
     }
 
-    /**
-     * 튜터 연결만 조회
-     * student_email = "TUTOR_SELF"인 레코드의 connectionId 반환
-     *
-     * 튜터가 대시보드 연결 시 다음과 같이 저장:
-     * {
-     *   "id": "uuid",
-     *   "tutor_email": "teacher@test.com",
-     *   "student_email": "TUTOR_SELF",
-     *   "connectionId": "conn-tutor-123",
-     *   "room": "dashboard",
-     *   "status": "active"
-     * }
-     */
     public String getTutorConnectionIds(String tutorEmail) {
 
        getLogger().log("  튜터 연결 조회 "+"테이블: " + connectionTable);
@@ -362,25 +347,4 @@ public class SocketRepository {
             return null;
         }
     }
-
-    public boolean existsConnectionId(String connectionId) {
-        try {
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("connection_id", AttributeValue.builder().s(connectionId).build());
-
-            GetItemRequest request = GetItemRequest.builder()
-                    .tableName(connectionTable)
-                    .key(key)
-                    .build();
-
-            GetItemResponse response = dynamoDbClient.getItem(request);
-
-            return response.hasItem();
-
-        } catch (Exception e) {
-            getLogger().log("❌ Error: " + e.getMessage());
-            return false;
-        }
-    }
-
 }

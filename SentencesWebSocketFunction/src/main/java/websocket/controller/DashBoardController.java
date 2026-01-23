@@ -20,16 +20,15 @@ public class DashBoardController {
     private final Gson gson;
 
     public Void handleSQSMessages(SQSEvent event, Context context) {
-        context.getLogger().log("=== DashBoardController.handleSQSMessage ===");
-
-        context.getLogger().log("========================================");
-        context.getLogger().log("  대시보드 업데이트 브로드캐스트");
-        context.getLogger().log("========================================");
+        context.getLogger().log(
+                "=== DashBoardController.handleSQSMessage | 대시보드 업데이트 브로드캐스트 ==="
+        );
 
         try {
             // 1. WebSocket 클라이언트 생성
-            context.getLogger().log("[1단계] WebSocket 클라이언트 생성");
-            context.getLogger().log("   엔드포인트: " + wsEndpoint);
+            context.getLogger().log(
+                    "[1단계] WebSocket 클라이언트 생성 | 엔드포인트: " + wsEndpoint
+            );
 
             ApiGatewayManagementApiClient wsClient = ApiGatewayManagementApiClient.builder()
                     .endpointOverride(URI.create(wsEndpoint))
@@ -39,8 +38,9 @@ public class DashBoardController {
             // 3. SQS 메시지 처리
             for (SQSEvent.SQSMessage sqsMessage : event.getRecords()) {
                 String messageBody = sqsMessage.getBody();
-                context.getLogger().log("\n📩 브로드캐스트 데이터 크기: " + messageBody.length() + " bytes");
-                context.getLogger().log("📩 SQS 메시지: " + messageBody);
+                context.getLogger().log(
+                        "📩 브로드캐스트 데이터 크기: " + messageBody.length() + " bytes | SQS 메시지: " + messageBody
+                );
 
 
                 DashboardMessage msg = gson.fromJson(messageBody, DashboardMessage.class);
@@ -82,12 +82,11 @@ public class DashBoardController {
             }
 
         } catch (Exception e) {
-            context.getLogger().log("\n========================================");
-            context.getLogger().log("  ❌ 치명적 에러 발생!");
-            context.getLogger().log("========================================");
-            context.getLogger().log("에러 타입: " + e.getClass().getName());
-            context.getLogger().log("에러 메시지: " + e.getMessage());
-            context.getLogger().log("\n스택 트레이스:");
+            context.getLogger().log(
+                    "❌ 치명적 에러 발생 | 에러 타입: " + e.getClass().getName()
+                            + " | 에러 메시지: " + e.getMessage()
+                            + " | 스택 트레이스 아래 확인"
+            );
             throw new RuntimeException("WebSocket 브로드캐스트 실패", e);
         }
 
