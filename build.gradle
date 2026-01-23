@@ -20,6 +20,7 @@ subprojects {
         implementation 'software.amazon.awssdk:ses'
         implementation 'software.amazon.awssdk:polly'
         implementation 'software.amazon.awssdk:secretsmanager'
+        implementation 'software.amazon.awssdk:sqs:2.41.1'
 
         // WebSocket 지원을 위한 AWS SDK
         implementation 'software.amazon.awssdk:apigatewaymanagementapi:2.20.0'
