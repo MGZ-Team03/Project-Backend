@@ -172,6 +172,8 @@ public class StudentStatusCollector {
             // 최근 5분 이내 세션 조회 (연결된 경우만)
             Map<String, Object> recentSession = getRecentSession(studentEmail);
 
+            getLogger().log("get Ration : " + recentSession);
+
             // 기본값 설정
             String status = "inactive";
             String activity = null;
@@ -302,7 +304,7 @@ public class StudentStatusCollector {
             Map<String, AttributeValue> item = response.items().getFirst();
             getLogger().log("✅ 세션 발견!");
 
-            if (item.containsKey("speaking_ratio")) {
+            if (item.containsKey("speaking_ration")) {
                 getLogger().log("speaking_ration: " + item.get("speaking_ration").n());
             }
             if (item.containsKey("duration")) {
@@ -312,12 +314,12 @@ public class StudentStatusCollector {
 
             Map<String, Object> session = new HashMap<>();
 
-            session.put("speaking_ratio", item.containsKey("speaking_ration")
+            session.put("speaking_ration", item.containsKey("speaking_ration")
                     ? Integer.parseInt(item.get("speaking_ration").n()) : 0);
             session.put("duration", item.containsKey("duration")
                     ? Integer.parseInt(item.get("duration").n()) / 60 : 0);
 
-            getLogger().log("speaking_ratio: " + session.get("speaking_ration"));
+            getLogger().log("speaking_ration: " + session.get("speaking_ration"));
             getLogger().log("duration: " + session.get("duration") + "분");
             getLogger().log("========================================");
 
