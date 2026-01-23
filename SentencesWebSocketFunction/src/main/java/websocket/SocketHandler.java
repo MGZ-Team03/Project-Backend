@@ -5,10 +5,12 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketResponse;
 import com.google.gson.Gson;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import websocket.config.DynamoDbConfig;
 import websocket.controller.SocketController;
 import websocket.repository.SocketRepository;
 import websocket.service.SocketService;
+import websocket.utils.StudentStatusCollector;
 
 /**
  * Handler for requests to Lambda function.
@@ -21,15 +23,25 @@ public class SocketHandler implements RequestHandler<APIGatewayV2WebSocketEvent,
     public SocketHandler() {
         // 환경 변수에서 테이블 이름 가져오기
         String tutorStudentsTable = System.getenv("TUTOR_STUDENTS_TABLE");
-        String connectionsTable = System.getenv("CONNECTIONS_TABLE");
+        String usersTable = System.getenv("USERS_TABLE");
+        String sessionsTable = System.getenv("SESSIONS_TABLE");
+
+        DynamoDbClient dynamoDb = DynamoDbConfig.connectDynamoDb();
+
 
         // 의존성 수동 주입
         SocketRepository repository = new SocketRepository(
                 DynamoDbConfig.connectDynamoDb(),
-                tutorStudentsTable,
-                connectionsTable
+                tutorStudentsTable
         );
-        SocketService service = new SocketService(repository);
+        StudentStatusCollector collector = new StudentStatusCollector(
+                dynamoDb,
+                tutorStudentsTable,
+                usersTable,
+                sessionsTable
+        );
+
+        SocketService service = new SocketService(repository, collector);
         this.controller = new SocketController(service, new Gson());
     }
 
