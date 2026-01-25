@@ -1,203 +1,107 @@
 package websocket.repository;
 
-import lombok.RequiredArgsConstructor;
-import org.joda.time.DateTime;
+import org.joda.time.Instant;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
-import com.amazonaws.services.lambda.runtime.Context;
-import websocket.dto.StatusRequest;
-import websocket.dto.TutorStudentDto;
-
 
 import java.util.HashMap;
 import java.util.Map;
 
 import static com.amazonaws.services.lambda.runtime.LambdaRuntime.getLogger;
 
-@RequiredArgsConstructor
+/**
+ * WebSocket 연결 저장소 (피드백/알림 수신 전용)
+ * - connection_id + user_email 저장/삭제
+ */
 public class SocketRepository {
     private final DynamoDbClient dynamoDbClient;
+    private final String connectionTable;
 
-    private final String tutorStudentsTableName;
-    private final String connectionsTableName;
+    public SocketRepository(DynamoDbClient dynamoDbClient) {
+        this.dynamoDbClient = dynamoDbClient;
+        this.connectionTable = System.getenv("CONNECTIONS_TABLE");
+    }
 
-    public void saveTutorStudent(StatusRequest request) {
-        getLogger().log("=== Repository 실행 ===");
+    /**
+     * $connect 시 user_email과 함께 connection 저장
+     */
+    public void saveConnectionWithUserEmail(String connectionId, String userEmail) {
+        getLogger().log("=== Repository: Save Connection ===");
+        getLogger().log("ConnectionId: " + connectionId + ", UserEmail: " + userEmail);
 
-        Map<String, AttributeValue> item = save(request);
+        // 기존 연결 삭제 (user_email 기준)
+        deleteOldConnectionsByUserEmail(userEmail);
+
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("connection_id", AttributeValue.builder().s(connectionId).build());
+        item.put("user_email", AttributeValue.builder().s(userEmail).build());
+        item.put("connected_at", AttributeValue.builder().s(Instant.now().toString()).build());
+        // TTL: 3일 후
+        long ttl = (System.currentTimeMillis() / 1000) + 3L * 24 * 60 * 60;
+        item.put("ttl", AttributeValue.builder().n(String.valueOf(ttl)).build());
+
+        PutItemRequest request = PutItemRequest.builder()
+                .tableName(connectionTable)
+                .item(item)
+                .build();
+
+        dynamoDbClient.putItem(request);
+        getLogger().log("✅ 연결 저장 완료: " + connectionId);
+    }
+
+    /**
+     * $disconnect 시 connection_id 삭제
+     */
+    public boolean deleteConnection(String connectionId) {
+        getLogger().log("=== Repository: Delete Connection ===");
+        getLogger().log("ConnectionId: " + connectionId);
 
         try {
-            PutItemRequest build = PutItemRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .item(item)
-                    // 조건: status가 기대하는 값이거나 아이템이 없을 때만 쓰기
-                    .conditionExpression("attribute_not_exists(tutor_email) OR #status <> :newStatus")
-                    .expressionAttributeNames(Map.of("#status", "status"))
-                    .expressionAttributeValues(Map.of(":newStatus", AttributeValue.fromS(request.getStatus())))
+            DeleteItemRequest request = DeleteItemRequest.builder()
+                    .tableName(connectionTable)
+                    .key(Map.of("connection_id", AttributeValue.builder().s(connectionId).build()))
                     .build();
 
-            dynamoDbClient.putItem(build);
-            getLogger().log("✅ Item saved successfully");
-
-        } catch (ConditionalCheckFailedException e) {
-            getLogger().log("⚠️ Condition failed - status already updated by another request");
-            // 무시하거나 재시도
-        }
-    }
-
-    private static HashMap<String, AttributeValue> save(StatusRequest request) {
-        HashMap<String, AttributeValue> item = new HashMap<>();
-        item.put("tutor_email", AttributeValue.fromS(request.getTutorEmail()));
-        item.put("student_email", AttributeValue.fromS(request.getStudentEmail()));
-        item.put("assigned_at",AttributeValue.fromS(DateTime.now().toString()));
-        item.put("status", AttributeValue.fromS(request.getStatus()));
-        item.put("room", AttributeValue.fromS(request.getRoom()));
-        return item;
-    }
-
-    public boolean existsTutorStudent(String tutorEmail, String studentEmail) {
-        try{
-            getLogger().log("=== Repository: Check Exists ===");
-            getLogger().log("Tutor: " + tutorEmail);
-            getLogger().log("Student: " + studentEmail);
-
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("tutor_email", AttributeValue.fromS(tutorEmail));
-            key.put("student_email", AttributeValue.fromS(studentEmail));
-
-            GetItemRequest request = GetItemRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .key(key)
-                    .build();
-
-            GetItemResponse response = dynamoDbClient.getItem(request);
-
-            boolean exists = response.hasItem();
-            getLogger().log("Exists: " + exists);
-            return exists;
-        }  catch (DynamoDbException e) {
-            getLogger().log("❌ DynamoDB Error: " + e.getMessage());
-            // 에러 발생 시 false 반환 (존재하지 않는 것으로 처리)
+            dynamoDbClient.deleteItem(request);
+            getLogger().log("✅ 연결 삭제 완료: " + connectionId);
+            return true;
+        } catch (Exception e) {
+            getLogger().log("⚠️ 연결 삭제 실패: " + e.getMessage());
             return false;
         }
     }
 
-    public void updateStatus(String tutorEmail, String studentEmail, String status) {
-        try {
-            getLogger().log("=== Repository: Update Status ===");
-            getLogger().log("Table: " + tutorStudentsTableName);
-            getLogger().log("Tutor: " + tutorEmail);
-            getLogger().log("Student: " + studentEmail);
-            getLogger().log("New Status: " + status);
-
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("tutor_email", AttributeValue.fromS(tutorEmail));
-            key.put("student_email", AttributeValue.fromS(studentEmail));
-
-            Map<String, AttributeValue> item = new HashMap<>();
-            Map<String, AttributeValue> attributeValues = new HashMap<>();
-            attributeValues.put(":newStatus", AttributeValue.fromS(status));
-            attributeValues.put(":updatedAt", AttributeValue.fromS(DateTime.now().toString()));
-
-
-            Map<String, String> attributeNames = new HashMap<>();
-            attributeNames.put("#status", "status");
-
-            UpdateItemRequest result = UpdateItemRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .key(key)
-                    .updateExpression("SET #status = :newStatus, updated_at = :updatedAt")
-                    .expressionAttributeNames(attributeNames)
-                    .expressionAttributeValues(attributeValues)
-                    .build();
-
-            dynamoDbClient.updateItem(result);
-            getLogger().log("✅ Successfully updated status to: " + status);
-        }catch (DynamoDbException e) {
-            getLogger().log("❌ DynamoDB Update Error: " + e.getMessage());
-            throw new RuntimeException("Failed to update status: " + e.getMessage(), e);
-        }
-    }
-
-    public String getStatus(String tutorEmail, String studentEmail) {
-        try {
-            getLogger().log("=== Repository: getStatus ===");
-
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("tutor_email", AttributeValue.fromS(tutorEmail));
-            key.put("student_email", AttributeValue.fromS(studentEmail));
-
-            GetItemResponse response = dynamoDbClient.getItem(GetItemRequest.builder()
-                    .tableName(tutorStudentsTableName)
-                    .key(key)
-                    .build());
-
-            return response.hasItem() && response.item().containsKey("status")
-                    ? response.item().get("status").s()
-                    : null;
-
-        } catch (DynamoDbException e) {
-            getLogger().log("❌ DynamoDB Error: " + e.getMessage());
-            throw e;
-        }
-    }
-
     /**
-     * CONNECTIONS_TABLE에 connectionId 저장 (튜터 피드백용)
+     * 기존 연결 삭제 (user_email 기준)
      */
-    public void saveConnection(String connectionId, String userEmail) {
+    private void deleteOldConnectionsByUserEmail(String userEmail) {
         try {
-            getLogger().log("=== Repository: Save Connection ===");
-            getLogger().log("ConnectionId: " + connectionId);
-            getLogger().log("UserEmail: " + userEmail);
-            getLogger().log("Table: " + connectionsTableName);
+            Map<String, AttributeValue> expressionValues = Map.of(
+                    ":email", AttributeValue.builder().s(userEmail).build()
+            );
 
-            Map<String, AttributeValue> item = new HashMap<>();
-            item.put("connection_id", AttributeValue.fromS(connectionId));
-            item.put("user_email", AttributeValue.fromS(userEmail));
-            item.put("connected_at", AttributeValue.fromS(DateTime.now().toString()));
-            
-            // TTL: 24시간 후 자동 삭제
-            long ttl = System.currentTimeMillis() / 1000 + (24 * 60 * 60);
-            item.put("ttl", AttributeValue.fromN(String.valueOf(ttl)));
-
-            PutItemRequest request = PutItemRequest.builder()
-                    .tableName(connectionsTableName)
-                    .item(item)
+            QueryRequest request = QueryRequest.builder()
+                    .tableName(connectionTable)
+                    .indexName("user_email-index")
+                    .keyConditionExpression("user_email = :email")
+                    .expressionAttributeValues(expressionValues)
+                    .projectionExpression("connection_id")
                     .build();
 
-            dynamoDbClient.putItem(request);
-            getLogger().log("✅ Connection saved successfully");
+            QueryResponse response = dynamoDbClient.query(request);
 
-        } catch (DynamoDbException e) {
-            // 연결 저장 실패해도 WebSocket 연결은 유지 (연결 실패 방지)
-            getLogger().log("❌ Failed to save connection: " + e.getMessage());
-            getLogger().log("⚠️ Connection will proceed without persistence");
+            for (Map<String, AttributeValue> item : response.items()) {
+                DeleteItemRequest deleteRequest = DeleteItemRequest.builder()
+                        .tableName(connectionTable)
+                        .key(Map.of("connection_id", item.get("connection_id")))
+                        .build();
+
+                dynamoDbClient.deleteItem(deleteRequest);
+            }
+
+            getLogger().log("✅ 기존 연결 삭제 완료 (user_email): " + userEmail);
+        } catch (Exception e) {
+            getLogger().log("⚠️ 기존 연결 삭제 실패: " + e.getMessage());
         }
     }
-
-    /**
-     * CONNECTIONS_TABLE에서 connectionId 삭제
-     */
-    public void deleteConnection(String connectionId) {
-        try {
-            getLogger().log("=== Repository: Delete Connection ===");
-            getLogger().log("ConnectionId: " + connectionId);
-
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("connection_id", AttributeValue.fromS(connectionId));
-
-            DeleteItemRequest request = DeleteItemRequest.builder()
-                    .tableName(connectionsTableName)
-                    .key(key)
-                    .build();
-
-            dynamoDbClient.deleteItem(request);
-            getLogger().log("✅ Connection deleted successfully");
-
-        } catch (DynamoDbException e) {
-            getLogger().log("❌ Failed to delete connection: " + e.getMessage());
-        }
-    }
-
 }
