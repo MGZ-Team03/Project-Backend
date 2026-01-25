@@ -1,4 +1,4 @@
-package websocket.config;
+package dashboard.config;
 
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
