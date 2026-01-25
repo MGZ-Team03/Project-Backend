@@ -128,7 +128,8 @@ Resources:
                   - sqs:ReceiveMessage
                   - sqs:DeleteMessage
                   - sqs:GetQueueAttributes
-                Resource: !GetAtt DashboardQueue.Arn
+                Resource: "*"
+
 
   # WebSocket 전용 Role
   WebSocketLambdaRole:
@@ -168,26 +169,7 @@ Resources:
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
                   - !Sub '${SentencesTable.Arn}/index/*'
-        - PolicyName: WebSocketManageConnections
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'execute-api:ManageConnections'
-                Resource:
-                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-        - PolicyName: SQSAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - sqs:SendMessage
-                  - sqs:ReceiveMessage
-                  - sqs:DeleteMessage
-                  - sqs:GetQueueAttributes
-                Resource: !GetAtt DashboardQueue.Arn
+
 
   # 1. Users 테이블
   UsersTable:
@@ -239,8 +221,6 @@ Resources:
   # 3. Learning Sessions 테이블
   LearningSessionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-learning-sessions'
       BillingMode: PAY_PER_REQUEST
@@ -275,8 +255,6 @@ Resources:
   # 4. Daily Statistics 테이블
   DailyStatisticsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-daily-statistics'
       BillingMode: PAY_PER_REQUEST
@@ -297,8 +275,6 @@ Resources:
   # 5. AI Conversations 테이블
   AIConversationsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-ai-conversations'
       BillingMode: PAY_PER_REQUEST
@@ -322,8 +298,6 @@ Resources:
   # 6. Feedback Messages 테이블
   FeedbackMessagesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-feedback-messages'
       BillingMode: PAY_PER_REQUEST
@@ -358,8 +332,6 @@ Resources:
   # 7. WebSocket Connections 테이블
   WebSocketConnectionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-websocket-connections'
       BillingMode: PAY_PER_REQUEST
@@ -396,8 +368,6 @@ Resources:
   # 8. Sentences 테이블
   SentencesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-sentences'
       BillingMode: PAY_PER_REQUEST
@@ -414,69 +384,6 @@ Resources:
       Tags:
         - Key: Name
           Value: Sentences Table
-
-  # 대시보드 SQS 핸들러 Lambda
-  DashboardQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-dashboard-queue'
-      VisibilityTimeout: 90  # Lambda timeout보다 3배 길게
-      Tags:
-        - Key: Name
-          Value: Dashboard Queue
-
-  DataGeneratorFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: DashboardFunction/
-      Handler: dashboard.handler.DataGeneratorHandler::handleRequest
-      Environment:
-        Variables:
-          QUEUE_URL: !Ref DashboardQueue
-          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
-          USERS_TABLE: !Ref UsersTable
-          SESSIONS_TABLE: !Ref LearningSessionsTable
-      Policies:
-        # DynamoDB 읽기 권한
-        - DynamoDBReadPolicy:
-            TableName: !Ref TutorStudentsTable
-        - DynamoDBReadPolicy:
-            TableName: !Ref UsersTable
-        - DynamoDBReadPolicy:
-            TableName: !Ref LearningSessionsTable
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - sqs:SendMessage
-                - sqs:GetQueueAttributes
-                - sqs:GetQueueUrl
-              Resource: !GetAtt DashboardQueue.Arn
-      Events:
-        ScheduleEvent:
-          Type: Schedule
-          Properties:
-            Schedule: rate(1 minute)
-
-  DashboardSQSFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: DashboardFunction/
-      Handler: dashboard.handler.DashboardSQSHandler::handleRequest
-      Role: !GetAtt WebSocketLambdaRole.Arn
-      Environment:
-        Variables:
-          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
-          DASHBOARD_API_ENDPOINT: https://ovcmaro4u8.execute-api.ap-northeast-2.amazonaws.com/Dev/api/dashboard
-      Events:
-        SQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt DashboardQueue.Arn
-            BatchSize: 10
-            Enabled: true
-    Metadata:
-      SamResourceId: DashboardSQSFunction
 
 
   HelloWorldFunction:
@@ -631,6 +538,7 @@ Resources:
     Properties:
       CodeUri: DashboardFunction
       Handler: dashboard.DashboardHandler::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TutorStudentsTable
@@ -675,6 +583,7 @@ Resources:
             Method: get
     Metadata:
       SamResourceId: StatisticsFunction
+
   AuthFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -746,7 +655,6 @@ Resources:
               Ref: MyApi
             Path: /api/auth
             Method: get
-
     Metadata:
       SamResourceId: AuthFunction
 
@@ -777,23 +685,6 @@ Resources:
             Method: post
     Metadata:
       SamResourceId: StudentStatusFunction
-
-  SentencesWebSocketFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: SentencesWebSocketFunction
-      Handler:  websocket.SocketHandler::handleRequest
-      Role: !GetAtt WebSocketLambdaRole.Arn
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action:
-                - 'execute-api:ManageConnections'
-              Resource:
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-    Metadata:
-      SamResourceId: SentencesWebSocketFunction
-
 
   MyApi:
     Type: AWS::Serverless::Api
@@ -830,91 +721,6 @@ Resources:
       Name: SpeakTrackerWebSocketAPI
       ProtocolType: WEBSOCKET
       RouteSelectionExpression: $request.body.action
-
-  # Lambda 실행 권한
-  WebSocketLambdaPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref SentencesWebSocketFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-
-  # Lambda Integration
-  WebSocketIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId: !Ref WebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SentencesWebSocketFunction.Arn}/invocations'
-
-  # $connect Route
-  ConnectRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: $connect
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-  # dashboard Route
-  DashboardRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: dashboard
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-
-
-  # $disconnect Route
-  DisconnectRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: $disconnect
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-  # status
-  # student 상태 5초 간격으로 전달 action/inaction/idle
-  StatusRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: status
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-
-  # $default Route
-  DefaultRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: $default
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-  # Stage
-  WebSocketStage:
-    Type: AWS::ApiGatewayV2::Stage
-    Properties:
-      StageName: Dev
-      ApiId: !Ref WebSocketApi
-      AutoDeploy: true
-
-#  # Lambda에 WebSocket 연결 관리 권한 부여
-#  WebSocketPolicy:
-#    Type: AWS::IAM::Policy
-#    Properties:
-#      PolicyName: WebSocketManageConnectionsPolicy
-#      PolicyDocument:
-#        Version: '2012-10-17'
-#        Statement:
-#          - Effect: Allow
-#            Action:
-#              - 'execute-api:ManageConnections'
-#            Resource:
-#              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-#      Roles:
-#        - !Ref SentencesWebSocketFunctionRole
 
 
 Outputs:
@@ -998,8 +804,6 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-FeedbackMessagesTable'
 
-
-
   WebSocketConnectionsTableName:
     Description: WebSocket Connections Table Name
     Value: !Ref WebSocketConnectionsTable
@@ -1011,15 +815,3 @@ Outputs:
     Value: !Ref SentencesTable
     Export:
       Name: !Sub '${AWS::StackName}-SentencesTable'
-
-  DashboardQueueUrl:
-    Description: Dashboard SQS Queue URL
-    Value: !Ref DashboardQueue
-    Export:
-      Name: !Sub '${AWS::StackName}-DashboardQueueUrl'
-
-  DashboardQueueArn:
-    Description: Dashboard SQS Queue ARN
-    Value: !GetAtt DashboardQueue.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-DashboardQueueArn'
