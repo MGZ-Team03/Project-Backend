@@ -14,7 +14,15 @@ import sentences.service.SituationGenerator;
 import sentences.service.TopicScenariosProvider;
 import sentences.service.SQSService;
 import sentences.service.JobStatusService;
+import sentences.service.SentenceAudioService;
+import sentences.service.TtsSqsService;
+import sentences.util.TextHashUtil;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
@@ -23,6 +31,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.time.Duration;
+import java.time.Instant;
 
 public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
@@ -32,6 +42,11 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
     private final String claudeApiKeySecretId;
     private final SQSService sqsService;
     private final JobStatusService jobStatusService;
+    private final TtsSqsService ttsSqsService;
+    private final SentenceAudioService sentenceAudioService;
+    private final String ttsBucket;
+    private final int presignedUrlExpiration;
+    private final S3Presigner s3Presigner;
 
     // Lazy-init (cold start 최적화): Secrets Manager 호출은 첫 요청 시점에만 수행
     private volatile ClaudeApiService claudeApiService;
@@ -44,25 +59,44 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         String conversationsTable = System.getenv("AI_CONVERSATIONS_TABLE");
         this.conversationRepository = new ConversationRepository(conversationsTable);
 
-        // SQS, DynamoDB 클라이언트 초기화
-        String queueUrl = System.getenv("AI_CONVERSATION_QUEUE_URL");
+        // SQS, DynamoDB, S3(Presign) 클라이언트 초기화
+        String aiQueueUrl = System.getenv("AI_CONVERSATION_QUEUE_URL");
         String jobStatusTable = System.getenv("JOB_STATUS_TABLE");
 
-        if (queueUrl != null && jobStatusTable != null) {
-            SqsClient sqsClient = SqsClient.builder()
+        String ttsQueueUrl = System.getenv("TTS_QUEUE_URL");
+        String sentenceAudioTable = System.getenv("SENTENCE_AUDIO_TABLE");
+        this.ttsBucket = System.getenv("TTS_BUCKET");
+        this.presignedUrlExpiration = Integer.parseInt(
+            System.getenv().getOrDefault("PRESIGNED_URL_EXPIRATION", "3600")
+        );
+
+        SqsClient sqsClient = null;
+        DynamoDbClient dynamoDbClient = null;
+        S3Presigner presigner = null;
+
+        if (aiQueueUrl != null || ttsQueueUrl != null) {
+            sqsClient = SqsClient.builder()
                 .region(Region.AP_NORTHEAST_2)
                 .build();
-
-            DynamoDbClient dynamoDbClient = DynamoDbClient.builder()
-                .region(Region.AP_NORTHEAST_2)
-                .build();
-
-            this.sqsService = new SQSService(sqsClient, queueUrl);
-            this.jobStatusService = new JobStatusService(dynamoDbClient, jobStatusTable);
-        } else {
-            this.sqsService = null;
-            this.jobStatusService = null;
         }
+        if (jobStatusTable != null || sentenceAudioTable != null) {
+            dynamoDbClient = DynamoDbClient.builder()
+                .region(Region.AP_NORTHEAST_2)
+                .build();
+        }
+        if (this.ttsBucket != null) {
+            // S3Client는 presign에는 필요 없지만, region 설정 명시용으로 함께 생성(향후 확장 대비)
+            S3Client.builder().region(Region.AP_NORTHEAST_2).build();
+            presigner = S3Presigner.builder()
+                .region(Region.AP_NORTHEAST_2)
+                .build();
+        }
+
+        this.sqsService = (aiQueueUrl != null && sqsClient != null) ? new SQSService(sqsClient, aiQueueUrl) : null;
+        this.jobStatusService = (jobStatusTable != null && dynamoDbClient != null) ? new JobStatusService(dynamoDbClient, jobStatusTable) : null;
+        this.ttsSqsService = (ttsQueueUrl != null && sqsClient != null) ? new TtsSqsService(sqsClient, ttsQueueUrl) : null;
+        this.sentenceAudioService = (sentenceAudioTable != null && dynamoDbClient != null) ? new SentenceAudioService(dynamoDbClient, sentenceAudioTable) : null;
+        this.s3Presigner = presigner;
     }
 
     private ClaudeApiService getClaudeApiService() {
@@ -115,6 +149,21 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             // GET /api/ai/chat/status/{requestId} - 작업 상태 조회
             if ("GET".equals(httpMethod) && path.contains("/chat/status/")) {
                 return handleChatStatus(input, context);
+            }
+
+            // GET /api/ai/conversations - 대화 이력 목록 조회
+            if ("GET".equals(httpMethod) && path.equals("/api/ai/conversations")) {
+                return handleConversationList(input, context);
+            }
+
+            // GET /api/ai/conversations/{conversationId} - 대화 상세 조회
+            if ("GET".equals(httpMethod) && path.startsWith("/api/ai/conversations/")) {
+                return handleConversationDetail(input, context);
+            }
+
+            // GET /api/sentences/audio/{sessionId} - 문장 연습 오디오 상태/통계 조회
+            if ("GET".equals(httpMethod) && path.contains("/api/sentences/audio/")) {
+                return handleSentenceAudioSession(input, context);
             }
 
             return createResponse(404, Map.of("error", "Not Found"));
@@ -175,6 +224,15 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
 
             // 응답 생성
             SentenceGenerateResponse response = SentenceGenerateResponse.success(sentences, topic, difficulty);
+            String sessionId = UUID.randomUUID().toString();
+            response.setSessionId(sessionId);
+
+            // 문장 생성 직후 오디오 세션 선생성 + TTS 큐잉 (비동기)
+            try {
+                enqueueSentenceTtsSession(sessionId, sentences, "Joanna", context);
+            } catch (Exception ttsErr) {
+                context.getLogger().log("Failed to enqueue sentence TTS session: " + ttsErr.getMessage());
+            }
             return createResponse(200, response);
 
         } catch (IllegalArgumentException e) {
@@ -264,6 +322,15 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
 
             SentenceRecommendResponse response = SentenceRecommendResponse.success(sentences, topic, difficulty);
             response.setRemainingTurns(remainingTurns);
+            String sessionId = UUID.randomUUID().toString();
+            response.setSessionId(sessionId);
+
+            // 추천 문장도 오디오 선처리 (영어만)
+            try {
+                enqueueRecommendSentenceTtsSession(sessionId, sentences, "Joanna", context);
+            } catch (Exception ttsErr) {
+                context.getLogger().log("Failed to enqueue recommend sentence TTS session: " + ttsErr.getMessage());
+            }
             return createResponse(200, response);
 
         } catch (IllegalArgumentException e) {
@@ -624,6 +691,281 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             e.printStackTrace();
             return createResponse(500, Map.of("error", "Failed to check status: " + e.getMessage()));
         }
+    }
+
+    private APIGatewayProxyResponseEvent handleConversationList(
+            APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            // Cognito Authorizer claims에서 studentEmail 추출
+            String studentEmail = extractStudentEmailFromAuthorizerClaims(input);
+
+            // Query parameter로 limit 받기 (기본값: 20)
+            int limit = 20;
+            if (input.getQueryStringParameters() != null
+                && input.getQueryStringParameters().containsKey("limit")) {
+                try {
+                    limit = Integer.parseInt(input.getQueryStringParameters().get("limit"));
+                    if (limit <= 0 || limit > 100) {
+                        limit = 20;
+                    }
+                } catch (NumberFormatException e) {
+                    limit = 20;
+                }
+            }
+
+            // 대화 이력 조회
+            List<ConversationSummary> conversations =
+                conversationRepository.getConversationsByStudent(studentEmail, limit);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", conversations);
+
+            return createResponse(200, response);
+
+        } catch (SecurityException e) {
+            return createResponse(401, Map.of("success", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("Conversation list error: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(500, Map.of("success", false, "error", "Failed to get conversation list: " + e.getMessage()));
+        }
+    }
+
+    private APIGatewayProxyResponseEvent handleConversationDetail(
+            APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            // Cognito Authorizer claims에서 studentEmail 추출
+            String requesterEmail = extractStudentEmailFromAuthorizerClaims(input);
+
+            // URL에서 conversationId 추출
+            String path = input.getPath();
+            String conversationId = path.substring(path.lastIndexOf('/') + 1);
+
+            context.getLogger().log("Conversation detail - conversationId: " + conversationId);
+
+            // 대화 조회
+            ConversationRepository.ConversationData conversation =
+                conversationRepository.getConversation(conversationId);
+
+            if (conversation == null) {
+                return createResponse(404, Map.of("success", false, "error", "Conversation not found"));
+            }
+
+            // 다른 사용자 대화 접근 방지
+            if (!requesterEmail.equals(conversation.getStudentEmail())) {
+                return createResponse(403, Map.of("success", false, "error", "Forbidden"));
+            }
+
+            // 응답 생성
+            Map<String, Object> conversationDto = new HashMap<>();
+            conversationDto.put("conversationId", conversation.getConversationId());
+            conversationDto.put("topic", conversation.getTopic());
+            conversationDto.put("difficulty", conversation.getDifficulty());
+            conversationDto.put("situation", conversation.getSituation());
+            conversationDto.put("role", conversation.getRole());
+            conversationDto.put("messages", conversation.getMessages());
+            conversationDto.put("timestamp", conversation.getTimestamp());
+            conversationDto.put("turnCount", conversation.getMessages().size());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", conversationDto);
+
+            return createResponse(200, response);
+
+        } catch (SecurityException e) {
+            return createResponse(401, Map.of("success", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("Conversation detail error: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(500, Map.of("success", false, "error", "Failed to get conversation detail: " + e.getMessage()));
+        }
+    }
+
+    private APIGatewayProxyResponseEvent handleSentenceAudioSession(
+        APIGatewayProxyRequestEvent input, Context context
+    ) {
+        try {
+            if (sentenceAudioService == null || s3Presigner == null || ttsBucket == null) {
+                return createResponse(503, Map.of("success", false, "error", "Sentence audio service not available"));
+            }
+
+            String path = input.getPath();
+            String sessionId = path.substring(path.lastIndexOf('/') + 1);
+
+            List<Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue>> items =
+                sentenceAudioService.queryBySessionId(sessionId);
+
+            if (items == null || items.isEmpty()) {
+                return createResponse(404, Map.of("success", false, "error", "Session not found"));
+            }
+
+            int totalCount = items.size();
+            int completedCount = 0;
+            int failedCount = 0;
+            int pendingCount = 0;
+            long totalDurationMs = 0;
+            int durationCompleteCount = 0;
+
+            List<Map<String, Object>> sentences = new ArrayList<>();
+
+            for (Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> item : items) {
+                int index = Integer.parseInt(item.get("sentenceIndex").n());
+                String status = item.containsKey("status") ? item.get("status").s() : "PENDING";
+
+                String english = item.containsKey("english") ? item.get("english").s() : null;
+                String korean = item.containsKey("korean") ? item.get("korean").s() : null;
+                String voiceId = item.containsKey("voiceId") ? item.get("voiceId").s() : null;
+
+                Long durationMs = null;
+                if (item.containsKey("durationMs")) {
+                    try {
+                        durationMs = Long.parseLong(item.get("durationMs").n());
+                    } catch (Exception ignore) {
+                        durationMs = null;
+                    }
+                }
+
+                String audioUrl = null;
+                if ("COMPLETED".equals(status) && item.containsKey("s3Key")) {
+                    String s3Key = item.get("s3Key").s();
+                    if (s3Key != null && !s3Key.isEmpty()) {
+                        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                            .bucket(ttsBucket)
+                            .key(s3Key)
+                            .build();
+                        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                            .signatureDuration(Duration.ofSeconds(presignedUrlExpiration))
+                            .getObjectRequest(getObjectRequest)
+                            .build();
+                        PresignedGetObjectRequest presigned = s3Presigner.presignGetObject(presignRequest);
+                        audioUrl = presigned.url().toString();
+                    }
+                }
+
+                if ("COMPLETED".equals(status)) completedCount++;
+                else if ("FAILED".equals(status)) failedCount++;
+                else pendingCount++;
+
+                if ("COMPLETED".equals(status) && durationMs != null) {
+                    totalDurationMs += durationMs;
+                    durationCompleteCount++;
+                }
+
+                Map<String, Object> dto = new HashMap<>();
+                dto.put("index", index);
+                dto.put("english", english);
+                dto.put("korean", korean);
+                dto.put("status", status);
+                dto.put("audioUrl", audioUrl);
+                dto.put("durationMs", durationMs);
+                dto.put("voiceId", voiceId);
+                if ("FAILED".equals(status)) {
+                    if (item.containsKey("errorCode")) dto.put("errorCode", item.get("errorCode").s());
+                    if (item.containsKey("errorMessage")) dto.put("errorMessage", item.get("errorMessage").s());
+                }
+                sentences.add(dto);
+            }
+
+            Map<String, Object> summary = new HashMap<>();
+            summary.put("totalCount", totalCount);
+            summary.put("completedCount", completedCount);
+            summary.put("failedCount", failedCount);
+            summary.put("pendingCount", pendingCount);
+            summary.put("totalDurationMs", totalDurationMs);
+            summary.put("durationCompleteCount", durationCompleteCount);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("sessionId", sessionId);
+            response.put("sentences", sentences);
+            response.put("summary", summary);
+
+            return createResponse(200, response);
+        } catch (Exception e) {
+            context.getLogger().log("Sentence audio session error: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(500, Map.of("success", false, "error", "Failed to get sentence audio session: " + e.getMessage()));
+        }
+    }
+
+    private void enqueueSentenceTtsSession(String sessionId, List<Sentence> sentences, String voiceId, Context context) {
+        if (sentenceAudioService == null || ttsSqsService == null) {
+            context.getLogger().log("Sentence audio services are not initialized; skipping TTS enqueue.");
+            return;
+        }
+        if (sentences == null || sentences.isEmpty()) {
+            return;
+        }
+
+        long ttl = Instant.now().plusSeconds(30L * 24 * 60 * 60).getEpochSecond();
+        List<TTSJobMessagePayload> payloads = new ArrayList<>();
+
+        for (int i = 0; i < sentences.size(); i++) {
+            Sentence s = sentences.get(i);
+            String english = s == null ? null : s.getText();
+            String korean = s == null ? null : s.getTranslation();
+            if (english == null) english = "";
+
+            String jobId = UUID.randomUUID().toString();
+            String textHash = TextHashUtil.generateHash(english, voiceId);
+            String s3Key = TextHashUtil.generateS3Key(voiceId, textHash);
+
+            // PENDING 선생성
+            sentenceAudioService.putPending(sessionId, i, english, korean, voiceId, jobId, ttl);
+
+            // SQS 메시지
+            TTSJobMessagePayload p = new TTSJobMessagePayload();
+            p.setJobId(jobId);
+            p.setText(english);
+            p.setVoiceId(voiceId);
+            p.setS3Key(s3Key);
+            p.setSessionId(sessionId);
+            p.setSentenceIndex(i);
+            p.setTrackDuration(true);
+            payloads.add(p);
+        }
+
+        ttsSqsService.sendTtsJobsBatch(payloads);
+    }
+
+    private void enqueueRecommendSentenceTtsSession(String sessionId, List<RecommendedSentence> sentences, String voiceId, Context context) {
+        if (sentenceAudioService == null || ttsSqsService == null) {
+            context.getLogger().log("Sentence audio services are not initialized; skipping recommend TTS enqueue.");
+            return;
+        }
+        if (sentences == null || sentences.isEmpty()) {
+            return;
+        }
+
+        long ttl = Instant.now().plusSeconds(30L * 24 * 60 * 60).getEpochSecond();
+        List<TTSJobMessagePayload> payloads = new ArrayList<>();
+
+        for (int i = 0; i < sentences.size(); i++) {
+            RecommendedSentence s = sentences.get(i);
+            String english = s == null ? null : s.getText();
+            if (english == null) english = "";
+
+            String jobId = UUID.randomUUID().toString();
+            String textHash = TextHashUtil.generateHash(english, voiceId);
+            String s3Key = TextHashUtil.generateS3Key(voiceId, textHash);
+
+            // PENDING 선생성 (추천 문장은 한국어 번역이 없을 수 있음)
+            sentenceAudioService.putPending(sessionId, i, english, null, voiceId, jobId, ttl);
+
+            TTSJobMessagePayload p = new TTSJobMessagePayload();
+            p.setJobId(jobId);
+            p.setText(english);
+            p.setVoiceId(voiceId);
+            p.setS3Key(s3Key);
+            p.setSessionId(sessionId);
+            p.setSentenceIndex(i);
+            p.setTrackDuration(true);
+            payloads.add(p);
+        }
+
+        ttsSqsService.sendTtsJobsBatch(payloads);
     }
 
     /**

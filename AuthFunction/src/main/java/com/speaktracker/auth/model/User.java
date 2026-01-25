@@ -10,6 +10,8 @@ public class User {
     private String role;
     private String createdAt;
     private String userSub;
+    private String profileImage;      // S3 URL
+    private String learningLevel;     // beginner, intermediate, advanced (AI 분석 결과)
     
     public User() {
     }
@@ -61,5 +63,21 @@ public class User {
     
     public void setUserSub(String userSub) {
         this.userSub = userSub;
+    }
+    
+    public String getProfileImage() {
+        return profileImage;
+    }
+    
+    public void setProfileImage(String profileImage) {
+        this.profileImage = profileImage;
+    }
+    
+    public String getLearningLevel() {
+        return learningLevel;
+    }
+    
+    public void setLearningLevel(String learningLevel) {
+        this.learningLevel = learningLevel;
     }
 }

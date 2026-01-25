@@ -15,7 +15,9 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import com.speaktracker.auth.dto.AuthResponse;
 import com.speaktracker.auth.dto.ConfirmRequest;
 import com.speaktracker.auth.dto.LoginRequest;
+import com.speaktracker.auth.dto.RefreshRequest;
 import com.speaktracker.auth.dto.RegisterRequest;
+import com.speaktracker.auth.dto.UpdateProfileRequest;
 import com.speaktracker.auth.dto.UserResponse;
 import com.speaktracker.auth.exception.AuthException;
 import com.speaktracker.auth.repository.UserRepository;
@@ -23,6 +25,7 @@ import com.speaktracker.auth.service.AuthService;
 import com.speaktracker.auth.service.CognitoService;
 import com.speaktracker.auth.service.JwtService;
 import com.speaktracker.auth.service.UserService;
+import com.speaktracker.auth.service.S3Service;
 
 /**
  * Handler for authentication requests using AWS Cognito and DynamoDB.
@@ -31,7 +34,10 @@ import com.speaktracker.auth.service.UserService;
  * - POST /api/auth/register : 회원가입 (Cognito + DynamoDB)
  * - POST /api/auth/login : 로그인 (Cognito)
  * - POST /api/auth/confirm : 이메일 인증 확인
+ * - POST /api/auth/refresh : 토큰 갱신 (RefreshToken)
  * - GET /api/auth/user : 사용자 정보 조회 (JWT 필요)
+ * - PUT /api/auth/profile : 프로필 업데이트 (JWT 필요)
+ * - POST /api/auth/profile/image : 프로필 이미지 업로드 URL 발급 (JWT 필요)
  * - GET /api/auth : 테스트 엔드포인트
  */
 public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
@@ -39,6 +45,7 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final AuthService authService;
     private final UserService userService;
+    private final S3Service s3Service;
     
     public AuthHandler() {
         // AWS 클라이언트 초기화
@@ -48,6 +55,7 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
         // 환경변수 로드
         String clientId = System.getenv("CLIENT_ID");
         String usersTable = System.getenv("USERS_TABLE");
+        String profileImagesBucket = System.getenv("PROFILE_IMAGES_BUCKET");
         
         // 서비스 초기화
         CognitoService cognitoService = new CognitoService(cognitoClient, clientId);
@@ -55,6 +63,7 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
         
         this.authService = new AuthService(cognitoService, userRepository);
         this.userService = new UserService(userRepository);
+        this.s3Service = new S3Service(profileImagesBucket);
     }
 
     @Override
@@ -77,9 +86,21 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
             else if ("POST".equals(httpMethod) && path.endsWith("/confirm")) {
                 return handleConfirm(input, context);
             }
+            // POST /api/auth/refresh
+            else if ("POST".equals(httpMethod) && path.endsWith("/refresh")) {
+                return handleRefresh(input, context);
+            }
             // GET /api/auth/user
             else if ("GET".equals(httpMethod) && path.endsWith("/user")) {
                 return handleGetUser(input, context);
+            }
+            // PUT /api/auth/profile
+            else if ("PUT".equals(httpMethod) && path.endsWith("/profile")) {
+                return handleUpdateProfile(input, context);
+            }
+            // POST /api/auth/profile/image
+            else if ("POST".equals(httpMethod) && path.endsWith("/profile/image")) {
+                return handleGetUploadUrl(input, context);
             }
             // GET /api/auth
             else if ("GET".equals(httpMethod) && "/api/auth".equals(path)) {
@@ -146,6 +167,23 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
     }
     
     /**
+     * 토큰 갱신 처리
+     */
+    private APIGatewayProxyResponseEvent handleRefresh(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            RefreshRequest request = objectMapper.readValue(input.getBody(), RefreshRequest.class);
+            AuthResponse response = authService.refreshToken(request.getRefreshToken());
+            return createResponse(200, response);
+        } catch (AuthException e) {
+            context.getLogger().log("Refresh error: " + e.getMessage());
+            return createResponse(401, Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("Refresh error: " + e.getMessage());
+            return createResponse(500, Map.of("error", "토큰 갱신 실패"));
+        }
+    }
+    
+    /**
      * 사용자 정보 조회 처리
      */
     private APIGatewayProxyResponseEvent handleGetUser(APIGatewayProxyRequestEvent input, Context context) {
@@ -173,6 +211,51 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "AuthHandler is ready");
         return createResponse(200, response);
+    }
+    
+    /**
+     * 프로필 업데이트 처리
+     */
+    private APIGatewayProxyResponseEvent handleUpdateProfile(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            Map<String, String> headers = input.getHeaders();
+            String authHeader = headers != null ? headers.get("Authorization") : null;
+            
+            String email = JwtService.extractEmailFromAuthHeader(authHeader);
+            UpdateProfileRequest request = objectMapper.readValue(input.getBody(), UpdateProfileRequest.class);
+            
+            UserResponse response = userService.updateProfile(email, request);
+            return createResponse(200, response);
+        } catch (AuthException e) {
+            context.getLogger().log("UpdateProfile error: " + e.getMessage());
+            return createResponse(401, Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("UpdateProfile error: " + e.getMessage());
+            return createResponse(500, Map.of("error", "프로필 업데이트 실패"));
+        }
+    }
+    
+    /**
+     * 프로필 이미지 업로드 URL 발급
+     */
+    private APIGatewayProxyResponseEvent handleGetUploadUrl(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            Map<String, String> headers = input.getHeaders();
+            String authHeader = headers != null ? headers.get("Authorization") : null;
+            
+            String email = JwtService.extractEmailFromAuthHeader(authHeader);
+            
+            // Presigned URL 생성
+            Map<String, String> urlInfo = s3Service.generateUploadUrl(email);
+            
+            return createResponse(200, urlInfo);
+        } catch (AuthException e) {
+            context.getLogger().log("GetUploadUrl error: " + e.getMessage());
+            return createResponse(401, Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("GetUploadUrl error: " + e.getMessage());
+            return createResponse(500, Map.of("error", "업로드 URL 생성 실패"));
+        }
     }
     
     /**

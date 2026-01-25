@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "Project02-speaktracker-acw"
+stack_name = "project02-speaktracker"
 region = "ap-northeast-2"
 
 [default.build.parameters]
@@ -17,9 +17,8 @@ lint = true
 capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-s3_prefix = "Project02-SpeakTracker-acw-v1"
+parameter_overrides = "SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
 image_repositories = []
-stack_name = "Project02-SpeakTracker-acw-v1"
 
 [default.package.parameters]
 resolve_s3 = true
@@ -32,14 +31,3 @@ warm_containers = "EAGER"
 
 [default.local_start_lambda.parameters]
 warm_containers = "EAGER"
-
-[personal.deploy.parameters]
-stack_name = "Project02-SpeakTracker-acw"
-resolve_s3 = true
-s3_prefix = "Project02-SpeakTracker-acw"
-region = "ap-northeast-2"
-capabilities = "CAPABILITY_NAMED_IAM"
-image_repositories = []
-
-[personal.global.parameters]
-region = "ap-northeast-2"

@@ -9,6 +9,8 @@ public class UserResponse {
     private String name;
     private String role;
     private String createdAt;
+    private String profileImage;
+    private String learningLevel;
     
     public UserResponse() {
     }
@@ -18,6 +20,16 @@ public class UserResponse {
         this.name = name;
         this.role = role;
         this.createdAt = createdAt;
+    }
+    
+    public UserResponse(String email, String name, String role, String createdAt, 
+                        String profileImage, String learningLevel) {
+        this.email = email;
+        this.name = name;
+        this.role = role;
+        this.createdAt = createdAt;
+        this.profileImage = profileImage;
+        this.learningLevel = learningLevel;
     }
     
     // Getters and Setters
@@ -51,5 +63,21 @@ public class UserResponse {
     
     public void setCreatedAt(String createdAt) {
         this.createdAt = createdAt;
+    }
+    
+    public String getProfileImage() {
+        return profileImage;
+    }
+    
+    public void setProfileImage(String profileImage) {
+        this.profileImage = profileImage;
+    }
+    
+    public String getLearningLevel() {
+        return learningLevel;
+    }
+    
+    public void setLearningLevel(String learningLevel) {
+        this.learningLevel = learningLevel;
     }
 }

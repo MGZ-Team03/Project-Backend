@@ -5,6 +5,11 @@ public class TTSJobMessage {
     private String text;
     private String voiceId;
     private String s3Key;
+    
+    // 문장 연습 통계용 필드 (Optional)
+    private String sessionId;
+    private Integer sentenceIndex;
+    private boolean trackDuration;
 
     public TTSJobMessage() {}
 
@@ -45,5 +50,33 @@ public class TTSJobMessage {
 
     public void setS3Key(String s3Key) {
         this.s3Key = s3Key;
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+
+    public Integer getSentenceIndex() {
+        return sentenceIndex;
+    }
+
+    public void setSentenceIndex(Integer sentenceIndex) {
+        this.sentenceIndex = sentenceIndex;
+    }
+
+    public boolean isTrackDuration() {
+        return trackDuration;
+    }
+
+    public boolean getTrackDuration() {
+        return trackDuration;
+    }
+
+    public void setTrackDuration(boolean trackDuration) {
+        this.trackDuration = trackDuration;
     }
 }

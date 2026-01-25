@@ -128,4 +128,38 @@ public class CognitoService {
             throw new AuthenticationException("인증 코드가 만료되었습니다.");
         }
     }
+    
+    /**
+     * RefreshToken을 사용하여 새로운 토큰 발급
+     * @param refreshToken Refresh Token
+     * @return 새로운 JWT 토큰 정보
+     * @throws AuthenticationException RefreshToken이 유효하지 않을 경우
+     */
+    public TokenInfo refreshToken(String refreshToken) {
+        Map<String, String> authParameters = new HashMap<>();
+        authParameters.put("REFRESH_TOKEN", refreshToken);
+        
+        InitiateAuthRequest authRequest = InitiateAuthRequest.builder()
+            .clientId(clientId)
+            .authFlow(AuthFlowType.REFRESH_TOKEN_AUTH)
+            .authParameters(authParameters)
+            .build();
+        
+        try {
+            InitiateAuthResponse authResponse = cognitoClient.initiateAuth(authRequest);
+            
+            TokenInfo tokenInfo = new TokenInfo();
+            tokenInfo.setIdToken(authResponse.authenticationResult().idToken());
+            tokenInfo.setAccessToken(authResponse.authenticationResult().accessToken());
+            // Refresh Token은 새로 발급되지 않으므로 기존 것을 그대로 사용
+            tokenInfo.setRefreshToken(refreshToken);
+            tokenInfo.setExpiresIn(authResponse.authenticationResult().expiresIn());
+            
+            return tokenInfo;
+        } catch (NotAuthorizedException e) {
+            throw new AuthenticationException("RefreshToken이 유효하지 않습니다. 다시 로그인해주세요.");
+        } catch (Exception e) {
+            throw new AuthenticationException("토큰 갱신에 실패했습니다: " + e.getMessage());
+        }
+    }
 }
