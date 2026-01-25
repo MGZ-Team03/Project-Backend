@@ -131,15 +131,6 @@ Resources:
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
                   - !Sub '${SentencesTable.Arn}/index/*'
-        - PolicyName: WebSocketManageConnections
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'execute-api:ManageConnections'
-                Resource:
-                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
         - PolicyName: SQSSendMessage
           PolicyDocument:
             Version: '2012-10-17'
@@ -249,15 +240,6 @@ Resources:
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
                   - !Sub '${SentencesTable.Arn}/index/*'
-        - PolicyName: WebSocketManageConnections
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'execute-api:ManageConnections'
-                Resource:
-                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
 
   # 1. Users 테이블
   UsersTable:
@@ -352,6 +334,9 @@ Resources:
           KeyType: HASH
         - AttributeName: date
           KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
       Tags:
         - Key: Name
           Value: Daily Statistics Table
@@ -855,7 +840,6 @@ Resources:
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
       Environment:
         Variables:
-          WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
           FEEDBACK_TABLE: !Ref FeedbackMessagesTable
           FEEDBACK_QUEUE_URL: !Ref FeedbackQueue
@@ -1178,6 +1162,9 @@ Resources:
       CodeUri: StatisticsFunction
       Handler: statistics.App::handleRequest
       Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Environment:
+        Variables:
+          STATISTICS_TABLE: !Ref DailyStatisticsTable
       Events:
         API1:
           Type: Api
@@ -1193,6 +1180,15 @@ Resources:
               Ref: MyApi
             Path: /api/statistics/weekly
             Method: get
+        PostDaily:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/stats/daily
+            Method: post
+            Auth:
+              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: StatisticsFunction
   AuthFunction:
@@ -1298,26 +1294,6 @@ Resources:
     Metadata:
       SamResourceId: AuthFunction
 
-  SentencesWebSocketFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: SentencesWebSocketFunction
-      Handler:  websocket.SocketHandler::handleRequest
-      Role: !GetAtt WebSocketLambdaRole.Arn
-      Environment:
-        Variables:
-          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action:
-                - 'execute-api:ManageConnections'
-              Resource:
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-    Metadata:
-      SamResourceId: SentencesWebSocketFunction
-
   # ========================================
   # Feedback Persistence Function (SQS Consumer)
   # ========================================
@@ -1376,72 +1352,6 @@ Resources:
           CognitoAuthorizer:
             UserPoolArn: !GetAtt UserPool.Arn
             IdentitySource: method.request.header.Authorization
-
-  WebSocketApi:
-    Type: AWS::ApiGatewayV2::Api
-    Properties:
-      Name: SpeakTrackerWebSocketAPI
-      ProtocolType: WEBSOCKET
-      RouteSelectionExpression: $request.body.action
-
-  # Lambda 실행 권한
-  WebSocketLambdaPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref SentencesWebSocketFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-
-  # Lambda Integration
-  WebSocketIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId: !Ref WebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SentencesWebSocketFunction.Arn}/invocations'
-
-  # $connect Route
-  ConnectRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: $connect
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-  # $disconnect Route
-  DisconnectRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: $disconnect
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-  # status
-  # student 상태 5초 간격으로 전달 action/inaction/idle
-  StatusRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: status
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-
-  # $default Route
-  DefaultRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: $default
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-  # Stage
-  WebSocketStage:
-    Type: AWS::ApiGatewayV2::Stage
-    Properties:
-      StageName: Dev
-      ApiId: !Ref WebSocketApi
-      AutoDeploy: true
 
   # ========================================
   # SQS Queues for Feedback Persistence
@@ -1578,10 +1488,11 @@ Resources:
           TUTOR_REQUESTS_TABLE: !Ref TutorRequestsTable
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
+          NOTIFICATIONS_TABLE: !Ref NotificationsTable
           NOTIFICATION_QUEUE_URL: !Ref NotificationQueue
           SES_SENDER_EMAIL: !Ref SesSenderEmail
           FRONTEND_URL: !Ref FrontendUrl
+          WEBSOCKET_API_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WebSocketApiStage}"
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -1595,11 +1506,6 @@ Resources:
             QueueName: !GetAtt NotificationQueue.QueueName
         - SESCrudPolicy:
             IdentityName: "*"
-        - Statement:
-          - Effect: Allow
-            Action:
-              - execute-api:ManageConnections
-            Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
       Events:
         GetTutors:
           Type: Api
@@ -1717,28 +1623,29 @@ Resources:
         - Name: QueueName
           Value: !GetAtt FeedbackDLQ.QueueName
 
-#  # Lambda에 WebSocket 연결 관리 권한 부여
-#  WebSocketPolicy:
-#    Type: AWS::IAM::Policy
-#    Properties:
-#      PolicyName: WebSocketManageConnectionsPolicy
-#      PolicyDocument:
-#        Version: '2012-10-17'
-#        Statement:
-#          - Effect: Allow
-#            Action:
-#              - 'execute-api:ManageConnections'
-#            Resource:
-#              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-#      Roles:
-#        - !Ref SentencesWebSocketFunctionRole
+  # WebSocket API Gateway
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${AWS::StackName}-websocket-api'
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
 
+  WebSocketApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: Dev
+      AutoDeploy: true
 
 Outputs:
   ApiEndpoint:
     Description: API Gateway Base URL
     Value:
       Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev
+  WebSocketURL:
+    Description: WebSocket API URL
+    Value: !Sub "wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WebSocketApiStage}"
   HelloWorldUrl:
     Value:
       Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/hello
@@ -1770,10 +1677,6 @@ Outputs:
   UserPoolArn:
     Description: Cognito User Pool ARN
     Value: !GetAtt UserPool.Arn
-
-  WebSocketURL:
-    Description: WebSocket API URL
-    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
 
   UsersTableName:
     Description: Users Table Name

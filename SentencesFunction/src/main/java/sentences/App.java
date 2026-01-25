@@ -151,6 +151,16 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
                 return handleChatStatus(input, context);
             }
 
+            // GET /api/ai/conversations - 대화 이력 목록 조회
+            if ("GET".equals(httpMethod) && path.equals("/api/ai/conversations")) {
+                return handleConversationList(input, context);
+            }
+
+            // GET /api/ai/conversations/{conversationId} - 대화 상세 조회
+            if ("GET".equals(httpMethod) && path.startsWith("/api/ai/conversations/")) {
+                return handleConversationDetail(input, context);
+            }
+
             // GET /api/sentences/audio/{sessionId} - 문장 연습 오디오 상태/통계 조회
             if ("GET".equals(httpMethod) && path.contains("/api/sentences/audio/")) {
                 return handleSentenceAudioSession(input, context);
@@ -680,6 +690,96 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             context.getLogger().log("Status check error: " + e.getMessage());
             e.printStackTrace();
             return createResponse(500, Map.of("error", "Failed to check status: " + e.getMessage()));
+        }
+    }
+
+    private APIGatewayProxyResponseEvent handleConversationList(
+            APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            // Cognito Authorizer claims에서 studentEmail 추출
+            String studentEmail = extractStudentEmailFromAuthorizerClaims(input);
+
+            // Query parameter로 limit 받기 (기본값: 20)
+            int limit = 20;
+            if (input.getQueryStringParameters() != null
+                && input.getQueryStringParameters().containsKey("limit")) {
+                try {
+                    limit = Integer.parseInt(input.getQueryStringParameters().get("limit"));
+                    if (limit <= 0 || limit > 100) {
+                        limit = 20;
+                    }
+                } catch (NumberFormatException e) {
+                    limit = 20;
+                }
+            }
+
+            // 대화 이력 조회
+            List<ConversationSummary> conversations =
+                conversationRepository.getConversationsByStudent(studentEmail, limit);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", conversations);
+
+            return createResponse(200, response);
+
+        } catch (SecurityException e) {
+            return createResponse(401, Map.of("success", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("Conversation list error: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(500, Map.of("success", false, "error", "Failed to get conversation list: " + e.getMessage()));
+        }
+    }
+
+    private APIGatewayProxyResponseEvent handleConversationDetail(
+            APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            // Cognito Authorizer claims에서 studentEmail 추출
+            String requesterEmail = extractStudentEmailFromAuthorizerClaims(input);
+
+            // URL에서 conversationId 추출
+            String path = input.getPath();
+            String conversationId = path.substring(path.lastIndexOf('/') + 1);
+
+            context.getLogger().log("Conversation detail - conversationId: " + conversationId);
+
+            // 대화 조회
+            ConversationRepository.ConversationData conversation =
+                conversationRepository.getConversation(conversationId);
+
+            if (conversation == null) {
+                return createResponse(404, Map.of("success", false, "error", "Conversation not found"));
+            }
+
+            // 다른 사용자 대화 접근 방지
+            if (!requesterEmail.equals(conversation.getStudentEmail())) {
+                return createResponse(403, Map.of("success", false, "error", "Forbidden"));
+            }
+
+            // 응답 생성
+            Map<String, Object> conversationDto = new HashMap<>();
+            conversationDto.put("conversationId", conversation.getConversationId());
+            conversationDto.put("topic", conversation.getTopic());
+            conversationDto.put("difficulty", conversation.getDifficulty());
+            conversationDto.put("situation", conversation.getSituation());
+            conversationDto.put("role", conversation.getRole());
+            conversationDto.put("messages", conversation.getMessages());
+            conversationDto.put("timestamp", conversation.getTimestamp());
+            conversationDto.put("turnCount", conversation.getMessages().size());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", conversationDto);
+
+            return createResponse(200, response);
+
+        } catch (SecurityException e) {
+            return createResponse(401, Map.of("success", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("Conversation detail error: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(500, Map.of("success", false, "error", "Failed to get conversation detail: " + e.getMessage()));
         }
     }
 

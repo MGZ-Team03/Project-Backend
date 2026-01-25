@@ -4,9 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import statistics.model.DailyStatistics;
+import statistics.model.ResponseQuality;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -51,6 +53,82 @@ public class DailyStatisticsRepository {
         }
 
         return parseStatistics(response.item());
+    }
+
+    /**
+     * 일별 통계 저장 (Upsert - 덮어쓰기 방식)
+     * 프론트엔드에서 전체 일별 스냅샷을 전송하므로 기존 데이터를 덮어씁니다.
+     */
+    public void saveDailyStatistics(DailyStatistics stats) {
+        try {
+            Map<String, AttributeValue> item = new HashMap<>();
+
+            // 필수 키
+            item.put("student_email", AttributeValue.builder().s(stats.getStudentEmail()).build());
+            item.put("date", AttributeValue.builder().s(stats.getDate()).build());
+
+            // TTL 설정 (30일 후 자동 삭제)
+            long ttl = Instant.now().plusSeconds(30 * 24 * 60 * 60).getEpochSecond();
+            item.put("ttl", AttributeValue.builder().n(String.valueOf(ttl)).build());
+
+            // 기본 통계
+            if (stats.getTotalRecordingTime() != null) {
+                item.put("total_recording_time", AttributeValue.builder().n(String.valueOf(stats.getTotalRecordingTime())).build());
+            }
+            if (stats.getTotalSpeakingTime() != null) {
+                item.put("total_speaking_time", AttributeValue.builder().n(String.valueOf(stats.getTotalSpeakingTime())).build());
+            }
+            if (stats.getSessionsCount() != null) {
+                item.put("sessions_count", AttributeValue.builder().n(String.valueOf(stats.getSessionsCount())).build());
+            }
+            if (stats.getPracticeCount() != null) {
+                item.put("practice_count", AttributeValue.builder().n(String.valueOf(stats.getPracticeCount())).build());
+            }
+            if (stats.getChatTurnsCount() != null) {
+                item.put("chat_turns_count", AttributeValue.builder().n(String.valueOf(stats.getChatTurnsCount())).build());
+            }
+
+            // 3대 지표 평균
+            if (stats.getAvgPaceRatio() != null) {
+                item.put("avg_pace_ratio", AttributeValue.builder().n(String.valueOf(stats.getAvgPaceRatio())).build());
+            }
+            if (stats.getAvgResponseLatency() != null) {
+                item.put("avg_response_latency", AttributeValue.builder().n(String.valueOf(stats.getAvgResponseLatency())).build());
+            }
+            if (stats.getAvgNetSpeakingDensity() != null) {
+                item.put("avg_net_speaking_density", AttributeValue.builder().n(String.valueOf(stats.getAvgNetSpeakingDensity())).build());
+            }
+
+            // 새 필드: avg_response_quality
+            if (stats.getAvgResponseQuality() != null) {
+                item.put("avg_response_quality", AttributeValue.builder().n(String.valueOf(stats.getAvgResponseQuality())).build());
+            }
+
+            // 상세 기록 (JSON으로 저장)
+            if (stats.getPaceRatios() != null && !stats.getPaceRatios().isEmpty()) {
+                item.put("pace_ratios", AttributeValue.builder().s(objectMapper.writeValueAsString(stats.getPaceRatios())).build());
+            }
+            if (stats.getResponseLatencies() != null && !stats.getResponseLatencies().isEmpty()) {
+                item.put("response_latencies", AttributeValue.builder().s(objectMapper.writeValueAsString(stats.getResponseLatencies())).build());
+            }
+
+            // 새 필드: response_qualities (JSON으로 저장)
+            if (stats.getResponseQualities() != null && !stats.getResponseQualities().isEmpty()) {
+                item.put("response_qualities", AttributeValue.builder().s(objectMapper.writeValueAsString(stats.getResponseQualities())).build());
+            }
+
+            PutItemRequest request = PutItemRequest.builder()
+                .tableName(tableName)
+                .item(item)
+                .build();
+
+            dynamoDbClient.putItem(request);
+
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize statistics data", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save daily statistics", e);
+        }
     }
 
     /**
@@ -275,6 +353,23 @@ public class DailyStatisticsRepository {
             }
         }
 
+        // 새 필드: avg_response_quality
+        if (item.containsKey("avg_response_quality")) {
+            stats.setAvgResponseQuality(Double.parseDouble(item.get("avg_response_quality").n()));
+        }
+
+        // 새 필드: response_qualities (JSON 리스트)
+        if (item.containsKey("response_qualities")) {
+            try {
+                String json = item.get("response_qualities").s();
+                List<ResponseQuality> qualities = objectMapper.readValue(json,
+                    new TypeReference<List<ResponseQuality>>() {});
+                stats.setResponseQualities(qualities);
+            } catch (JsonProcessingException e) {
+                stats.setResponseQualities(new ArrayList<>());
+            }
+        }
+
         return stats;
     }
 
@@ -290,8 +385,10 @@ public class DailyStatisticsRepository {
         stats.setAvgPaceRatio(0.0);
         stats.setAvgResponseLatency(0.0);
         stats.setAvgNetSpeakingDensity(0.0);
+        stats.setAvgResponseQuality(0.0);
         stats.setPaceRatios(new ArrayList<>());
         stats.setResponseLatencies(new ArrayList<>());
+        stats.setResponseQualities(new ArrayList<>());
         return stats;
     }
 
