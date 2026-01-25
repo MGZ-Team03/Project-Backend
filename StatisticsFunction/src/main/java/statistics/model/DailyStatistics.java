@@ -3,6 +3,7 @@ package statistics.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -45,6 +46,13 @@ public class DailyStatistics {
 
     @JsonProperty("response_latencies")
     private List<Long> responseLatencies;
+
+    // 새로 추가된 필드
+    @JsonProperty("avg_response_quality")
+    private Double avgResponseQuality;
+
+    @JsonProperty("response_qualities")
+    private List<ResponseQuality> responseQualities;
 
     public DailyStatistics() {}
 
@@ -144,6 +152,22 @@ public class DailyStatistics {
         this.responseLatencies = responseLatencies;
     }
 
+    public Double getAvgResponseQuality() {
+        return avgResponseQuality;
+    }
+
+    public void setAvgResponseQuality(Double avgResponseQuality) {
+        this.avgResponseQuality = avgResponseQuality;
+    }
+
+    public List<ResponseQuality> getResponseQualities() {
+        return responseQualities;
+    }
+
+    public void setResponseQualities(List<ResponseQuality> responseQualities) {
+        this.responseQualities = responseQualities;
+    }
+
     /**
      * 빈 통계 객체 생성 (데이터 없는 날짜용)
      */
@@ -159,6 +183,10 @@ public class DailyStatistics {
         stats.setAvgPaceRatio(null);
         stats.setAvgResponseLatency(null);
         stats.setAvgNetSpeakingDensity(null);
+        stats.setAvgResponseQuality(null);
+        stats.setPaceRatios(new ArrayList<>());
+        stats.setResponseLatencies(new ArrayList<>());
+        stats.setResponseQualities(new ArrayList<>());
         return stats;
     }
 }

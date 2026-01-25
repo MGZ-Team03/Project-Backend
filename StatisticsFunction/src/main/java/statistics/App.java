@@ -40,6 +40,11 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
                 return handleWeeklyStatistics(input, context);
             }
 
+            // POST /api/stats/daily
+            if ("POST".equals(method) && path.equals("/api/stats/daily")) {
+                return handlePostDailyStatistics(input, context);
+            }
+
             return createResponse(404, Map.of("success", false, "error", "Not Found"));
 
         } catch (IllegalArgumentException e) {
@@ -94,6 +99,59 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         ));
 
         return createResponse(200, responseBody);
+    }
+
+    /**
+     * POST /api/stats/daily - 일별 통계 저장 (Upsert)
+     */
+    private APIGatewayProxyResponseEvent handlePostDailyStatistics(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            String body = input.getBody();
+            if (body == null || body.isEmpty()) {
+                throw new IllegalArgumentException("Request body is required");
+            }
+
+            // JSON 파싱
+            DailyStatistics stats = objectMapper.readValue(body, DailyStatistics.class);
+
+            // 필수 필드 검증
+            if (stats.getStudentEmail() == null || stats.getStudentEmail().isEmpty()) {
+                throw new IllegalArgumentException("student_email is required");
+            }
+            if (stats.getDate() == null || stats.getDate().isEmpty()) {
+                throw new IllegalArgumentException("date is required");
+            }
+
+            // 날짜 형식 검증 (YYYY-MM-DD)
+            if (!stats.getDate().matches("\\d{4}-\\d{2}-\\d{2}")) {
+                throw new IllegalArgumentException("date must be in YYYY-MM-DD format");
+            }
+
+            // 저장 (Upsert - 덮어쓰기)
+            statisticsRepository.saveDailyStatistics(stats);
+
+            context.getLogger().log("Daily statistics saved for " + stats.getStudentEmail() + " on " + stats.getDate());
+
+            Map<String, Object> responseBody = new LinkedHashMap<>();
+            responseBody.put("success", true);
+            responseBody.put("message", "Daily statistics saved successfully");
+            responseBody.put("data", Map.of(
+                "student_email", stats.getStudentEmail(),
+                "date", stats.getDate()
+            ));
+
+            return createResponse(200, responseBody);
+
+        } catch (IllegalArgumentException e) {
+            return createResponse(400, Map.of("success", false, "error", e.getMessage()));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            context.getLogger().log("JSON parsing error: " + e.getMessage());
+            return createResponse(400, Map.of("success", false, "error", "Invalid JSON format"));
+        } catch (Exception e) {
+            context.getLogger().log("Error saving daily statistics: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(500, Map.of("success", false, "error", "Failed to save daily statistics"));
+        }
     }
 
     private WeeklySummary calculateWeeklySummary(List<DailyStatistics> weeklyStats) {
@@ -175,8 +233,10 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         stats.setAvgPaceRatio(0.0);
         stats.setAvgResponseLatency(0.0);
         stats.setAvgNetSpeakingDensity(0.0);
+        stats.setAvgResponseQuality(0.0);
         stats.setPaceRatios(new ArrayList<>());
         stats.setResponseLatencies(new ArrayList<>());
+        stats.setResponseQualities(new ArrayList<>());
         return stats;
     }
 
@@ -184,7 +244,7 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         Map<String, String> headers = new HashMap<>();
         headers.put("Content-Type", "application/json");
         headers.put("Access-Control-Allow-Origin", "*");
-        headers.put("Access-Control-Allow-Methods", "GET, OPTIONS");
+        headers.put("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         headers.put("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
         try {
