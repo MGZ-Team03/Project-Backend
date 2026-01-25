@@ -32,8 +32,6 @@ public class SocketHandler implements RequestHandler<APIGatewayV2WebSocketEvent,
                 System.getenv("USERS_TABLE"),
                 System.getenv("SESSIONS_TABLE")
         );
-
-
         // 의존성 수동 주입
         SocketRepository repository = new SocketRepository(
                 DynamoDbConfig.connectDynamoDb(),

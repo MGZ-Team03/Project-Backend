@@ -73,6 +73,9 @@ public class DataGeneratorHandler implements RequestHandler <Map<String,Object>,
             // JSON 변환
             String messageBody = gson.toJson(dashboardUpdate);
 
+            getLogger().log("sqs.messageBody: " + messageBody);
+            getLogger().log("sqs.queueUrl: " + QUEUE_URL);
+
             // SQS 전송
             sqsClient.sendMessage(SendMessageRequest.builder()
                     .queueUrl(QUEUE_URL)
@@ -89,26 +92,19 @@ public class DataGeneratorHandler implements RequestHandler <Map<String,Object>,
     // ✅ Users 테이블에서 모든 튜터 조회
     private List<String> getAllTutorEmails() {
         try {
-            // ✅ 예약어 처리를 위한 AttributeNames 추가
-            Map<String, String> expressionAttributeNames = new HashMap<>();
-            expressionAttributeNames.put("#role", "role");
 
             getLogger().log("조회테이블 : " + System.getenv("USERS_TABLE"));
-
-            Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
-            expressionAttributeValues.put(":role", AttributeValue.builder().s("tutor").build());
-
             getLogger().log("user_table: "+System.getenv("USERS_TABLE"));
 
-            ScanRequest scanRequest = ScanRequest.builder()
+            QueryRequest queryRequest = QueryRequest.builder()
                     .tableName(System.getenv("USERS_TABLE"))
-                    .filterExpression("#role = :role")  // ✅ #role 사용
-                    .expressionAttributeNames(expressionAttributeNames)  // ✅ 추가!
-                    .expressionAttributeValues(expressionAttributeValues)
+                    .keyConditionExpression("#role = :role")  // PK 조건
+                    .expressionAttributeNames(Map.of("#role", "role"))
+                    .expressionAttributeValues(Map.of(":role", AttributeValue.builder().s("tutor").build()))
                     .projectionExpression("email")
                     .build();
 
-            ScanResponse response = dynamoDbClient.scan(scanRequest);
+            QueryResponse response = dynamoDbClient.query(queryRequest);
 
             getLogger().log("튜터 조회 결과: " + response.items().size() + "명");
 

@@ -25,18 +25,6 @@ Globals:
         WS_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
 
 Resources:
-
-  DashboardQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-dashboard-queue'
-      VisibilityTimeout: 90  # Lambda timeout보다 3배 길게
-      MessageRetentionPeriod: 345600  # 4일
-      ReceiveMessageWaitTimeSeconds: 0
-      Tags:
-        - Key: Name
-          Value: Dashboard Queue
-
   # Cognito User Pool for authentication
   UserPool:
     Type: AWS::Cognito::UserPool
@@ -208,11 +196,15 @@ Resources:
       TableName: !Sub '${AWS::StackName}-users'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
+        - AttributeName: role
+          AttributeType: S
         - AttributeName: email
           AttributeType: S
       KeySchema:
-        - AttributeName: email
+        - AttributeName: role
           KeyType: HASH
+        - AttributeName: email
+          KeyType: RANGE
       Tags:
         - Key: Name
           Value: Users Table
@@ -423,22 +415,59 @@ Resources:
         - Key: Name
           Value: Sentences Table
 
-
-  # ========================================
   # 대시보드 SQS 핸들러 Lambda
-  # ========================================
+  DashboardQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-dashboard-queue'
+      VisibilityTimeout: 90  # Lambda timeout보다 3배 길게
+      Tags:
+        - Key: Name
+          Value: Dashboard Queue
+
+  DataGeneratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: DashboardFunction/
+      Handler: dashboard.handler.DataGeneratorHandler::handleRequest
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref DashboardQueue
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          USERS_TABLE: !Ref UsersTable
+          SESSIONS_TABLE: !Ref LearningSessionsTable
+      Policies:
+        # DynamoDB 읽기 권한
+        - DynamoDBReadPolicy:
+            TableName: !Ref TutorStudentsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LearningSessionsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - sqs:SendMessage
+                - sqs:GetQueueAttributes
+                - sqs:GetQueueUrl
+              Resource: !GetAtt DashboardQueue.Arn
+      Events:
+        ScheduleEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+
   DashboardSQSFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: SentencesWebSocketFunction
-      Handler: websocket.handler.DashboardSQSHandler::handleRequest
+      CodeUri: DashboardFunction/
+      Handler: dashboard.handler.DashboardSQSHandler::handleRequest
       Role: !GetAtt WebSocketLambdaRole.Arn
-
       Environment:
         Variables:
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable  # ← 추가!
-          WS_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
+          DASHBOARD_API_ENDPOINT: https://ovcmaro4u8.execute-api.ap-northeast-2.amazonaws.com/Dev/api/dashboard
       Events:
         SQSEvent:
           Type: SQS
@@ -448,55 +477,6 @@ Resources:
             Enabled: true
     Metadata:
       SamResourceId: DashboardSQSFunction
-
-  # ========================================
-  # 대시보드 데이터 생성기 Lambda
-  # ========================================
-#  DashboardDataGeneratorFunction:
-#    Type: AWS::Serverless::Function
-#    Properties:
-#      CodeUri: SentencesWebSocketFunction
-#      Handler: websocket.handler.DataGeneratorHandler::handleRequest
-#      Role: !GetAtt CommonLambdaRole.Arn
-#      Timeout: 30
-#      MemorySize: 512
-#      Environment:
-#        Variables:
-#          QUEUE_URL: !Ref DashboardQueue
-#          USERS_TABLE: !Ref UsersTable
-#          SESSIONS_TABLE: !Ref LearningSessionsTable
-#          STATISTICS_TABLE: !Ref DailyStatisticsTable
-#          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
-#          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-#      Events:
-#        ScheduleEvent:
-#          Type: Schedule
-#          Properties:
-#            Schedule: rate(1 minute)
-#            Enabled: true
-#    Metadata:
-#      SamResourceId: DashboardDataGeneratorFunction
-
-## here
-#  DataGeneratorFunction:
-#    Type: AWS::Serverless::Function
-#    Properties:
-#      CodeUri: DashboardFunction
-#      Handler: dashboard.handler.DataGeneratorHandler::handleRequest
-#      Timeout: 900
-#      Policies:
-#        - DynamoDBCrudPolicy:
-#            TableName: !Ref TutorStudentsTable
-#        - DynamoDBReadPolicy:
-#            TableName: !Ref UsersTable
-#        - DynamoDBReadPolicy:
-#            TableName: !Ref SessionsTable
-#      Events:
-#        ScheduleEvent:
-#          Type: Schedule
-#          Properties:
-#            Schedule: rate(1 minutes)
-#            Description: Collect student status every 5 minutes
 
 
   HelloWorldFunction:
@@ -659,12 +639,18 @@ Resources:
         - DynamoDBReadPolicy:
             TableName: !Ref LearningSessionsTable
       Events:
-        UpdateStatus:
+        API1:
           Type: Api
           Properties:
             RestApiId: !Ref MyApi
             Path: /api/dashboard
             Method: GET
+        API2:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /api/dashboard
+            Method: POST
 
   StatisticsFunction:
     Type: AWS::Serverless::Function

@@ -316,14 +316,20 @@ public class StudentStatusCollector {
     }
 
     private String getStudentName(String studentEmail) {
-
+        getLogger().log("StudentStatusCollector.GetstudentName , studentEmail: " + studentEmail);
         try {
             GetItemRequest request = GetItemRequest.builder()
                     .tableName(usersTable)
-                    .key(Map.of("email", AttributeValue.builder().s(studentEmail).build()))
+                    .key(Map.of(
+                            "role", AttributeValue.builder().s("student").build(),  // ✅ PK 추가
+                            "email", AttributeValue.builder().s(studentEmail).build()  // SK
+                    ))
                     .build();
 
+
             GetItemResponse response = dynamoDbClient.getItem(request);
+
+            getLogger().log("get studentname: " + response.item().get("name"));
 
             if (response.hasItem() && response.item().containsKey("name")) {
                 return response.item().get("name").s();

@@ -8,6 +8,8 @@ import com.google.gson.Gson;
 import dashboard.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,6 +18,13 @@ public class DashboardController implements RequestHandler<APIGatewayProxyReques
 
     private final DashboardService studentService;
     private final Gson gson;
+
+    // HTTP 클라이언트 (재사용)
+    private static final HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(20))
+            .build();
+
 
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent request, Context context) {
         String path = request.getPath();
