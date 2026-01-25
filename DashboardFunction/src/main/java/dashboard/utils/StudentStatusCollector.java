@@ -166,8 +166,10 @@ public class StudentStatusCollector {
             boolean alert = false;
             String lastActive = null;
 
+            getLogger().log("no room " + Objects.requireNonNull(recentSession).get("room"));
+
             // 📊 상태 결정 로직
-            if (isActive.equals("active") &&!Objects.equals(room, "no room") && !room.isEmpty()) {
+            if (isActive.equals("active") && !room.equals("idle") && !room.isEmpty()) {
                 getLogger().log("✅ 유효한 방에 입장: " + room);
                 activity = room;  // "sentence" or "ai"
 
@@ -176,7 +178,7 @@ public class StudentStatusCollector {
                     speakingRatio = (Integer) recentSession.getOrDefault("speaking_ration", 0);
                     duration = (Integer) recentSession.getOrDefault("duration", 0);
 
-                    if (speakingRatio > 0) {
+                    if (speakingRatio > 20) {
                         status = "speaking";  // 🎤 발음 중
                         getLogger().log("🎤 발음 중 (비율: " + speakingRatio + "%)");
                     } else {
@@ -195,7 +197,7 @@ public class StudentStatusCollector {
                     alert = true;
                     getLogger().log("💤 방에는 있지만 활동 없음");
                 }
-            } else if(isActive.equals("active") && room.equals("no room")) {
+            } else if(isActive.equals("active") && room.equals("idle")) {
                 // ✅ 연결은 되어 있지만 유효한 방이 없음
                 status = "idle";      // 🔴
                 alert = true;         // 개입 필요!
