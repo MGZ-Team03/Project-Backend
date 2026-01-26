@@ -1775,6 +1775,27 @@ Resources:
         - Name: QueueName
           Value: !GetAtt FeedbackDLQ.QueueName
 
+
+  DashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: DashboardFunction
+      Handler: dashboard.DashboardHandler::handleRequest
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TutorStudentsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LearningSessionsTable
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /api/dashboard
+            Method: GET
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway Base URL
