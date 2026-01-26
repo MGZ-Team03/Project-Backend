@@ -259,7 +259,7 @@ Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub '${AWS::StackName}-users-v2'
+      TableName: !Sub '${AWS::StackName}-users'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: role
