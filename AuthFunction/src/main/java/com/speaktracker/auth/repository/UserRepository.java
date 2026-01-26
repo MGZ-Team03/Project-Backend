@@ -5,9 +5,9 @@ import java.util.Map;
 
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
-import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
+import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 
 import com.speaktracker.auth.model.User;
 
@@ -54,23 +54,28 @@ public class UserRepository {
     }
     
     /**
-     * 이메일로 사용자 조회
+     * 이메일로 사용자 조회 (GSI 사용)
      * @param email 사용자 이메일
      * @return 사용자 정보 (없으면 null)
      */
     public User findByEmail(String email) {
-        GetItemRequest getItemRequest = GetItemRequest.builder()
+        QueryRequest queryRequest = QueryRequest.builder()
             .tableName(usersTable)
-            .key(Map.of("email", AttributeValue.builder().s(email).build()))
+            .indexName("email-index")
+            .keyConditionExpression("email = :email")
+            .expressionAttributeValues(Map.of(
+                ":email", AttributeValue.builder().s(email).build()
+            ))
+            .limit(1)
             .build();
         
-        GetItemResponse getItemResponse = dynamoDbClient.getItem(getItemRequest);
+        QueryResponse queryResponse = dynamoDbClient.query(queryRequest);
         
-        if (!getItemResponse.hasItem()) {
+        if (!queryResponse.hasItems() || queryResponse.items().isEmpty()) {
             return null;
         }
         
-        Map<String, AttributeValue> item = getItemResponse.item();
+        Map<String, AttributeValue> item = queryResponse.items().get(0);
         
         User user = new User();
         user.setEmail(item.get("email").s());
@@ -105,9 +110,11 @@ public class UserRepository {
         if (user.getUserSub() != null) {
             item.put("user_sub", AttributeValue.builder().s(user.getUserSub()).build());
         }
-        if (user.getProfileImage() != null) {
+        // profileImage: null이 아니고 비어있지 않으면 저장
+        if (user.getProfileImage() != null && !user.getProfileImage().isEmpty()) {
             item.put("profile_image", AttributeValue.builder().s(user.getProfileImage()).build());
         }
+        // profileImage가 null이면 필드 자체를 포함하지 않음 (PutItem은 전체 교체이므로 기존 값 삭제됨)
         if (user.getLearningLevel() != null) {
             item.put("learning_level", AttributeValue.builder().s(user.getLearningLevel()).build());
         }

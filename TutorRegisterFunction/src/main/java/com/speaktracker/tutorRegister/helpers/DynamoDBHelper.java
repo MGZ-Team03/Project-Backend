@@ -32,20 +32,25 @@ public class DynamoDBHelper {
     // ===== 사용자 관련 =====
 
     /**
-     * 이메일로 사용자 조회
+     * 이메일로 사용자 조회 (GSI 사용)
      */
     public User getUserByEmail(String email) {
         try {
-            GetItemResponse response = dynamoDbClient.getItem(GetItemRequest.builder()
+            QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
                     .tableName(usersTable)
-                    .key(Map.of("email", AttributeValue.builder().s(email).build()))
+                    .indexName("email-index")
+                    .keyConditionExpression("email = :email")
+                    .expressionAttributeValues(Map.of(
+                            ":email", AttributeValue.builder().s(email).build()
+                    ))
+                    .limit(1)
                     .build());
 
-            if (!response.hasItem()) {
+            if (!response.hasItems() || response.items().isEmpty()) {
                 return null;
             }
 
-            return mapToUser(response.item());
+            return mapToUser(response.items().get(0));
         } catch (Exception e) {
             throw new RuntimeException("Failed to get user: " + email, e);
         }

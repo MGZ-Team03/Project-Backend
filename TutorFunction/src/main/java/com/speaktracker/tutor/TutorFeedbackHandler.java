@@ -40,7 +40,7 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
     private static final String CONNECTIONS_TABLE = System.getenv("CONNECTIONS_TABLE");
     private static final String TUTOR_STUDENTS_TABLE = System.getenv("TUTOR_STUDENTS_TABLE");
     private static final String USERS_TABLE = System.getenv("USERS_TABLE");
-    private static final String WEBSOCKET_ENDPOINT = System.getenv("WEBSOCKET_ENDPOINT");
+    private static final String WEBSOCKET_ENDPOINT = System.getenv("WEBSOCKET_API_ENDPOINT");
     private static final String FEEDBACK_QUEUE_URL = System.getenv("FEEDBACK_QUEUE_URL");
     
     private final DynamoDbClient dynamoDbClient;
