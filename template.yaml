@@ -128,6 +128,16 @@ Resources:
                   - !GetAtt FeedbackQueue.Arn
                   - !GetAtt NotificationQueue.Arn
 
+        - PolicyName: WebSocketManageConnections
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'execute-api:ManageConnections'
+                Resource:
+                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
         - PolicyName: SecretsManagerReadClaudeKey
           PolicyDocument:
             Version: '2012-10-17'
@@ -166,6 +176,16 @@ Resources:
                   - s3:ListBucket
                 Resource:
                   - !GetAtt TTSBucket.Arn
+        - PolicyName: S3ProfileImagesAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - !Sub '${ProfileImagesBucket.Arn}/*'
         - PolicyName: JobStatusTableAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -187,6 +207,54 @@ Resources:
                   - ses:SendRawEmail
                 Resource: '*'
 
+  # WebSocket Lambda Role
+  WebSocketLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBFullAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:*
+                Resource:
+                  - !GetAtt UsersTable.Arn
+                  - !GetAtt TutorStudentsTable.Arn
+                  - !GetAtt LearningSessionsTable.Arn
+                  - !GetAtt DailyStatisticsTable.Arn
+                  - !GetAtt AIConversationsTable.Arn
+                  - !GetAtt FeedbackMessagesTable.Arn
+                  - !GetAtt WebSocketConnectionsTable.Arn
+                  - !GetAtt SentencesTable.Arn
+                  - !Sub '${UsersTable.Arn}/index/*'
+                  - !Sub '${TutorStudentsTable.Arn}/index/*'
+                  - !Sub '${LearningSessionsTable.Arn}/index/*'
+                  - !Sub '${DailyStatisticsTable.Arn}/index/*'
+                  - !Sub '${AIConversationsTable.Arn}/index/*'
+                  - !Sub '${FeedbackMessagesTable.Arn}/index/*'
+                  - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
+                  - !Sub '${SentencesTable.Arn}/index/*'
+        - PolicyName: WebSocketManageConnections
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'execute-api:ManageConnections'
+                Resource:
+                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
   # 1. Users 테이블
   UsersTable:
     Type: AWS::DynamoDB::Table
@@ -203,6 +271,13 @@ Resources:
           KeyType: HASH
         - AttributeName: email
           KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
       Tags:
         - Key: Name
           Value: Users Table
@@ -792,6 +867,10 @@ Resources:
       Environment:
         Variables:
           FEEDBACK_QUEUE_URL: !Ref FeedbackQueue
+          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
+          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          USERS_TABLE: !Ref UsersTable
       Events:
         API1:
           Type: Api
@@ -905,6 +984,7 @@ Resources:
           JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
           TTS_QUEUE_URL: !Ref TTSQueue
           TTS_BUCKET: !Ref TTSBucket
+          SENTENCE_AUDIO_TABLE: !Ref SentenceAudioTable
           PRESIGNED_URL_EXPIRATION: '3600'
       Events:
         API1:
@@ -1270,6 +1350,78 @@ Resources:
       SamResourceId: StudentStatusFunction
 
   # ========================================
+  # WebSocket Function
+  # ========================================
+  SentencesWebSocketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: SentencesWebSocketFunction
+      Handler: websocket.SocketHandler::handleRequest
+      Role: !GetAtt WebSocketLambdaRole.Arn
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
+    Metadata:
+      SamResourceId: SentencesWebSocketFunction
+
+  # WebSocket API Gateway
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: SpeakTrackerWebSocketAPI
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+
+  # Lambda 실행 권한
+  WebSocketLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SentencesWebSocketFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  # Lambda Integration
+  WebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SentencesWebSocketFunction.Arn}/invocations'
+
+  # $connect Route
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  # $disconnect Route
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  # $default Route
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  # WebSocket Stage
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: Dev
+      ApiId: !Ref WebSocketApi
+      AutoDeploy: true
+
+  # ========================================
   # Feedback Persistence Function (SQS Consumer)
   # ========================================
   FeedbackPersistenceFunction:
@@ -1488,6 +1640,7 @@ Resources:
           NOTIFICATION_QUEUE_URL: !Ref NotificationQueue
           SES_SENDER_EMAIL: noreply@example.com
           FRONTEND_URL: https://example.com
+          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -1620,6 +1773,9 @@ Outputs:
     Description: API Gateway Base URL
     Value:
       Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev
+  WebSocketURL:
+    Description: WebSocket API URL
+    Value: !Sub "wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
   HelloWorldUrl:
     Value:
       Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/hello

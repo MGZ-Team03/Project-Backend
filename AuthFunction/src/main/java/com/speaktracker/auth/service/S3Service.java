@@ -25,17 +25,21 @@ public class S3Service {
     /**
      * 프로필 이미지 업로드용 Presigned URL 생성
      * @param email 사용자 이메일
+     * @param contentType 파일 Content-Type (image/jpeg, image/png 등)
      * @return uploadUrl과 imageUrl을 포함한 Map
      */
-    public Map<String, String> generateUploadUrl(String email) {
+    public Map<String, String> generateUploadUrl(String email, String contentType) {
+        // Content-Type에서 확장자 추출
+        String extension = getExtensionFromContentType(contentType);
+        
         // 파일 키 생성 (이메일 해시 + 타임스탬프로 유니크하게)
-        String fileKey = "profiles/" + Math.abs(email.hashCode()) + "_" + System.currentTimeMillis() + ".jpg";
+        String fileKey = "profiles/" + Math.abs(email.hashCode()) + "_" + System.currentTimeMillis() + extension;
         
         // S3 PutObject 요청 생성
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
             .bucket(bucketName)
             .key(fileKey)
-            .contentType("image/jpeg")
+            .contentType(contentType)
             .build();
         
         // Presigned URL 요청 생성 (5분 유효)
@@ -56,5 +60,19 @@ public class S3Service {
         result.put("imageUrl", imageUrl);
         
         return result;
+    }
+    
+    /**
+     * Content-Type에서 파일 확장자 추출
+     */
+    private String getExtensionFromContentType(String contentType) {
+        if (contentType == null) return ".jpg";
+        switch (contentType.toLowerCase()) {
+            case "image/png": return ".png";
+            case "image/gif": return ".gif";
+            case "image/webp": return ".webp";
+            case "image/jpeg":
+            default: return ".jpg";
+        }
     }
 }

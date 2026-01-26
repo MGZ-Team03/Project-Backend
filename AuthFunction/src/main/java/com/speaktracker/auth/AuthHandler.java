@@ -245,8 +245,22 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
             
             String email = JwtService.extractEmailFromAuthHeader(authHeader);
             
-            // Presigned URL 생성
-            Map<String, String> urlInfo = s3Service.generateUploadUrl(email);
+            // 요청 바디에서 contentType 추출
+            String contentType = "image/jpeg"; // 기본값
+            String body = input.getBody();
+            if (body != null && !body.isEmpty()) {
+                try {
+                    Map<String, String> requestBody = objectMapper.readValue(body, Map.class);
+                    if (requestBody.containsKey("contentType")) {
+                        contentType = requestBody.get("contentType");
+                    }
+                } catch (Exception e) {
+                    context.getLogger().log("Body parsing warning: " + e.getMessage());
+                }
+            }
+            
+            // Presigned URL 생성 (contentType 전달)
+            Map<String, String> urlInfo = s3Service.generateUploadUrl(email, contentType);
             
             return createResponse(200, urlInfo);
         } catch (AuthException e) {
