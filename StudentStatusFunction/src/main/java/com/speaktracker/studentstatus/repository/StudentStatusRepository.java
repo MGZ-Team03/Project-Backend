@@ -25,7 +25,8 @@ public class StudentStatusRepository {
      * 학생 상태 저장
      */
     public void saveStudentStatus(StudentStatusRequest studentStatusRequest) {
-        getLogger().log("변함??");
+        String tutorEmail;
+        String studentEmail;
 
         getLogger().log(
                 "===✅ Repository 실행 | 학생: " + studentStatusRequest.getStudentEmail()
@@ -34,13 +35,24 @@ public class StudentStatusRepository {
                         + " ==="
         );
 
+
         Map<String, AttributeValue> emails = findByStudentEmail(studentStatusRequest.getStudentEmail());
-        String tutorEmail = Objects.equals(emails.get("tutor_email").s(), "undfined") ? "undfined" : emails.get("tutor_email").s();
-        String studentEmail = emails.get("student_email").s();
+        if (emails == null) {
+            getLogger().log("⚠️ 등록되지 않은 학생입니다. 새로 저장합니다.");
+            tutorEmail = "undefined";  // "undfined" 오타 수정
+            studentEmail = studentStatusRequest.getStudentEmail();
+        }
+        else {
+            getLogger().log("⚠️ 등록되지 않은 학생입니다. 새로 저장합니다.");
+            tutorEmail = emails.get("tutor_email") != null && !emails.get("tutor_email").s().equals("undefined")
+                    ? emails.get("tutor_email").s()
+                    : "undefined";
+            studentEmail = emails.get("student_email").s();
+        }
 
         getLogger().log("📌tutorEmail: " + tutorEmail + " studentEmail: " + studentEmail);
 
-        Map<String, AttributeValue> item = buildItem(tutorEmail,studentEmail,studentStatusRequest);
+        Map<String, AttributeValue> item = buildItem(tutorEmail, studentEmail, studentStatusRequest);
 
         getLogger().log(tutorStudentsTable + ": " + item);
 
