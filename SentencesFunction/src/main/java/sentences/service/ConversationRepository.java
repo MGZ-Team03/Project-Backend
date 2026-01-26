@@ -93,6 +93,32 @@ public class ConversationRepository {
         return summaries;
     }
 
+    /**
+     * 학생별 최근 대화 조회 (최신순, messages 포함)
+     * - PK(student_email) 기준 Query로 최신 limit개를 가져온 뒤, 각 아이템의 messages JSON을 파싱합니다.
+     * - 레벨 평가 등 “최근 대화 내용”이 필요한 기능에서 사용합니다.
+     */
+    public List<ConversationData> getRecentConversationsWithMessages(String studentEmail, int limit) {
+        Map<String, AttributeValue> expressionValues = new HashMap<>();
+        expressionValues.put(":email", AttributeValue.builder().s(studentEmail).build());
+
+        QueryRequest queryRequest = QueryRequest.builder()
+            .tableName(tableName)
+            .keyConditionExpression("student_email = :email")
+            .expressionAttributeValues(expressionValues)
+            .scanIndexForward(false) // 최신순 (timestamp DESC)
+            .limit(limit)
+            .build();
+
+        QueryResponse response = dynamoDbClient.query(queryRequest);
+
+        List<ConversationData> conversations = new ArrayList<>();
+        for (Map<String, AttributeValue> item : response.items()) {
+            conversations.add(parseConversationData(item));
+        }
+        return conversations;
+    }
+
     private ConversationSummary parseConversationSummary(Map<String, AttributeValue> item) {
         String conversationId = item.get("conversation_id").s();
         String timestamp = item.get("timestamp").s();
