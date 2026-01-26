@@ -43,7 +43,7 @@ public class StudentStatusRepository {
             studentEmail = studentStatusRequest.getStudentEmail();
         }
         else {
-            getLogger().log("⚠️ 등록되지 않은 학생입니다. 새로 저장합니다.");
+            getLogger().log("⚠️ 등록된 학생입니다");
             tutorEmail = emails.get("tutor_email") != null && !emails.get("tutor_email").s().equals("undefined")
                     ? emails.get("tutor_email").s()
                     : "undefined";
