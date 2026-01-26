@@ -60,6 +60,10 @@ public class FeedbackPersistenceHandler implements RequestHandler<SQSEvent, Void
     private void saveToDynamoDB(FeedbackMessage feedback, Context context) {
         Map<String, AttributeValue> item = new HashMap<>();
         
+        // composite_key 생성: tutor_email#student_email (PK)
+        String compositeKey = feedback.getTutorEmail() + "#" + feedback.getStudentEmail();
+        
+        item.put("composite_key", AttributeValue.builder().s(compositeKey).build());
         item.put("feedback_id", AttributeValue.builder().s(feedback.getFeedbackId()).build());
         item.put("tutor_email", AttributeValue.builder().s(feedback.getTutorEmail()).build());
         item.put("student_email", AttributeValue.builder().s(feedback.getStudentEmail()).build());
