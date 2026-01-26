@@ -1183,6 +1183,29 @@ Resources:
     Metadata:
       SamResourceId: STTFunction
 
+  DashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: DashboardFunction
+      Handler: dashboard.DashboardHandler::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn
+      Environment:
+        Variables:
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          USERS_TABLE: !Ref UsersTable
+          SESSIONS_TABLE: !Ref LearningSessionsTable
+      Events:
+        GetDashboard:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /api/dashboard
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: DashboardFunction
+
   StatisticsFunction:
     Type: AWS::Serverless::Function
     Properties:
