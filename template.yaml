@@ -259,7 +259,7 @@ Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub '${AWS::StackName}-users'
+      TableName: !Sub '${AWS::StackName}-users-v2'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: role
@@ -1060,6 +1060,24 @@ Resources:
             Method: get
             Auth:
               Authorizer: CognitoAuthorizer
+        ConversationList:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/ai/conversations
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
+        ConversationDetail:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/ai/conversations/{conversationId}
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: SentencesFunction
 
@@ -1230,15 +1248,6 @@ Resources:
               Ref: MyApi
             Path: /api/statistics/weekly
             Method: get
-        PostDaily:
-          Type: Api
-          Properties:
-            RestApiId:
-              Ref: MyApi
-            Path: /api/stats/daily
-            Method: post
-            Auth:
-              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: StatisticsFunction
   AuthFunction:
@@ -1472,31 +1481,6 @@ Resources:
             QueueName: !GetAtt FeedbackQueue.QueueName
     Metadata:
       SamResourceId: FeedbackPersistenceFunction
-
-  # S3 Bucket for TTS Audio Files
-  TTSAudioBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub '${AWS::StackName}-tts-audio'
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        BlockPublicPolicy: false
-        IgnorePublicAcls: false
-        RestrictPublicBuckets: false
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: ObjectWriter
-      CorsConfiguration:
-        CorsRules:
-          - AllowedOrigins:
-              - '*'
-            AllowedMethods:
-              - GET
-              - HEAD
-            AllowedHeaders:
-              - '*'
-            MaxAge: 3600
-
 
   MyApi:
     Type: AWS::Serverless::Api
@@ -1796,9 +1780,6 @@ Outputs:
     Description: API Gateway Base URL
     Value:
       Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev
-  WebSocketURL:
-    Description: WebSocket API URL
-    Value: !Sub "wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
   HelloWorldUrl:
     Value:
       Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/hello
