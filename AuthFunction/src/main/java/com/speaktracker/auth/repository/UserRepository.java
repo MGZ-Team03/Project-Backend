@@ -3,11 +3,16 @@ package com.speaktracker.auth.repository;
 import java.util.HashMap;
 import java.util.Map;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
+import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
+import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
 
 import com.speaktracker.auth.model.User;
 
@@ -92,7 +97,10 @@ public class UserRepository {
         if (item.containsKey("learning_level")) {
             user.setLearningLevel(item.get("learning_level").s());
         }
-        
+        if (item.containsKey("last_level_eval_date")) {
+            user.setLastLevelEvalDate(item.get("last_level_eval_date").s());
+        }
+
         return user;
     }
     
@@ -131,5 +139,67 @@ public class UserRepository {
             .build();
         
         dynamoDbClient.putItem(putItemRequest);
+    }
+
+    /**
+     * 모든 학생 조회 (Scan)
+     * @param limit 조회할 최대 개수
+     * @param exclusiveStartKey 페이지네이션 시작 키
+     * @return ScanResult (학생 목록 + LastEvaluatedKey)
+     */
+    public ScanResult scanStudents(int limit, Map<String, AttributeValue> exclusiveStartKey) {
+        Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
+        expressionAttributeValues.put(":roleValue", AttributeValue.builder().s("student").build());
+
+        Map<String, String> expressionAttributeNames = new HashMap<>();
+        expressionAttributeNames.put("#role", "role");
+
+        ScanRequest.Builder scanRequestBuilder = ScanRequest.builder()
+            .tableName(usersTable)
+            .filterExpression("#role = :roleValue")
+            .expressionAttributeValues(expressionAttributeValues)
+            .expressionAttributeNames(expressionAttributeNames)
+            .projectionExpression("email, learning_level")
+            .limit(limit);
+
+        if (exclusiveStartKey != null && !exclusiveStartKey.isEmpty()) {
+            scanRequestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        ScanResponse response = dynamoDbClient.scan(scanRequestBuilder.build());
+
+        // User 객체 리스트로 변환
+        List<User> users = new ArrayList<>();
+        for (Map<String, AttributeValue> item : response.items()) {
+            User user = new User();
+            user.setEmail(item.get("email").s());
+            if (item.containsKey("learning_level")) {
+                user.setLearningLevel(item.get("learning_level").s());
+            }
+            users.add(user);
+        }
+
+        return new ScanResult(users, response.lastEvaluatedKey());
+    }
+
+    /**
+     * Scan 결과
+     */
+    public static class ScanResult {
+        private final List<User> users;
+        private final Map<String, AttributeValue> lastEvaluatedKey;
+
+        public ScanResult(List<User> users, Map<String, AttributeValue> lastEvaluatedKey) {
+            this.users = users;
+            this.lastEvaluatedKey = lastEvaluatedKey;
+        }
+
+        public List<User> getUsers() {
+            return users;
+        }
+
+        public Map<String, AttributeValue> getLastEvaluatedKey() {
+            return lastEvaluatedKey;
+        }
     }
 }

@@ -17,9 +17,11 @@ import com.speaktracker.auth.dto.ConfirmRequest;
 import com.speaktracker.auth.dto.LoginRequest;
 import com.speaktracker.auth.dto.RefreshRequest;
 import com.speaktracker.auth.dto.RegisterRequest;
+import com.speaktracker.auth.dto.StudentListResponse;
 import com.speaktracker.auth.dto.UpdateProfileRequest;
 import com.speaktracker.auth.dto.UserResponse;
 import com.speaktracker.auth.exception.AuthException;
+import com.speaktracker.auth.model.User;
 import com.speaktracker.auth.repository.UserRepository;
 import com.speaktracker.auth.service.AuthService;
 import com.speaktracker.auth.service.CognitoService;
@@ -102,11 +104,15 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
             else if ("POST".equals(httpMethod) && path.endsWith("/profile/image")) {
                 return handleGetUploadUrl(input, context);
             }
+            // GET /api/auth/studentslevel
+            else if ("GET".equals(httpMethod) && path.endsWith("/studentslevel")) {
+                return handleGetStudents(input, context);
+            }
             // GET /api/auth
             else if ("GET".equals(httpMethod) && "/api/auth".equals(path)) {
                 return handleGetUserInfo(input, context);
             }
-            
+
             return createResponse(404, Map.of("error", "Not Found"));
             
         } catch (Exception e) {
@@ -242,9 +248,9 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
         try {
             Map<String, String> headers = input.getHeaders();
             String authHeader = headers != null ? headers.get("Authorization") : null;
-            
+
             String email = JwtService.extractEmailFromAuthHeader(authHeader);
-            
+
             // 요청 바디에서 contentType 추출
             String contentType = "image/jpeg"; // 기본값
             String body = input.getBody();
@@ -258,10 +264,10 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
                     context.getLogger().log("Body parsing warning: " + e.getMessage());
                 }
             }
-            
+
             // Presigned URL 생성 (contentType 전달)
             Map<String, String> urlInfo = s3Service.generateUploadUrl(email, contentType);
-            
+
             return createResponse(200, urlInfo);
         } catch (AuthException e) {
             context.getLogger().log("GetUploadUrl error: " + e.getMessage());
@@ -271,7 +277,78 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
             return createResponse(500, Map.of("error", "업로드 URL 생성 실패"));
         }
     }
-    
+
+    /**
+     * 학생 목록 조회 (튜터 전용)
+     */
+    private APIGatewayProxyResponseEvent handleGetStudents(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            context.getLogger().log("GetStudents - Start");
+
+            // JWT에서 email 추출
+            Map<String, String> headers = input.getHeaders();
+            String authHeader = headers != null ? headers.get("Authorization") : null;
+            context.getLogger().log("GetStudents - AuthHeader present: " + (authHeader != null));
+
+            String email = JwtService.extractEmailFromAuthHeader(authHeader);
+            context.getLogger().log("GetStudents - Email: " + email);
+
+            // 사용자 조회 및 권한 검증
+            User user = userService.getUserByEmailInternal(email);
+            if (user == null) {
+                context.getLogger().log("GetStudents - User not found");
+                return createResponse(401, Map.of("error", "Unauthorized"));
+            }
+
+            context.getLogger().log("GetStudents - User role: " + user.getRole());
+
+            if (!"tutor".equals(user.getRole())) {
+                context.getLogger().log("GetStudents - Not a tutor");
+                return createResponse(403, Map.of("error", "Forbidden - Tutor role required"));
+            }
+
+            // Query 파라미터 파싱
+            Map<String, String> queryParams = input.getQueryStringParameters();
+            String level = queryParams != null ? queryParams.get("level") : null;
+            String sortBy = queryParams != null ? queryParams.get("sortBy") : "email";
+            String sortOrder = queryParams != null ? queryParams.get("sortOrder") : "asc";
+            String nextToken = queryParams != null ? queryParams.get("nextToken") : null;
+
+            int limit = 20; // 기본값
+            if (queryParams != null && queryParams.containsKey("limit")) {
+                try {
+                    limit = Integer.parseInt(queryParams.get("limit"));
+                    if (limit <= 0 || limit > 100) {
+                        limit = 20;
+                    }
+                } catch (NumberFormatException e) {
+                    limit = 20;
+                }
+            }
+
+            context.getLogger().log("GetStudents - Calling getStudentsList with level: " + level + ", sortBy: " + sortBy + ", limit: " + limit);
+
+            // 학생 목록 조회
+            StudentListResponse response = userService.getStudentsList(
+                    level, sortBy, sortOrder, limit, nextToken
+            );
+
+            context.getLogger().log("GetStudents - Success, found " + response.getStudents().size() + " students");
+
+            return createResponse(200, response);
+
+        } catch (AuthException e) {
+            context.getLogger().log("GetStudents AuthException: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(401, Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("GetStudents Exception: " + e.getMessage());
+            context.getLogger().log("GetStudents Stack trace: " + e.getClass().getName());
+            e.printStackTrace();
+            return createResponse(500, Map.of("error", "학생 목록 조회 실패: " + e.getMessage()));
+        }
+    }
+
     /**
      * API Gateway 응답 생성
      */

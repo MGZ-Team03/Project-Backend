@@ -37,7 +37,7 @@ sam deploy
 **생성되는 리소스**:
 - CloudFormation 스택: `Project02-SpeakTracker-v2`
 - UserPool: `Project02-SpeakTracker-v2-userpool`
-- DynamoDB 테이블 (8개):
+- DynamoDB 테이블 (7개):
   - `Project02-SpeakTracker-v2-users`
   - `Project02-SpeakTracker-v2-tutor-students`
   - `Project02-SpeakTracker-v2-learning-sessions`
@@ -45,7 +45,6 @@ sam deploy
   - `Project02-SpeakTracker-v2-ai-conversations`
   - `Project02-SpeakTracker-v2-feedback-messages`
   - `Project02-SpeakTracker-v2-websocket-connections`
-  - `Project02-SpeakTracker-v2-sentences`
 
 ### 1-3. 배포 확인
 ```bash
@@ -100,8 +99,8 @@ aws dynamodb scan \
 
 ### 3-1. 기존 v1 테이블 삭제
 ```bash
-# 8개 테이블 일괄 삭제
-for table in users tutor-students learning-sessions daily-statistics ai-conversations feedback-messages websocket-connections sentences; do
+# 7개 테이블 일괄 삭제
+for table in users tutor-students learning-sessions daily-statistics ai-conversations feedback-messages websocket-connections; do
   aws dynamodb delete-table \
     --table-name "Project02-SpeakTracker-$table" \
     --region ap-northeast-2
@@ -117,7 +116,7 @@ done
 sleep 60
 
 # 확인
-for table in users tutor-students learning-sessions daily-statistics ai-conversations feedback-messages websocket-connections sentences; do
+for table in users tutor-students learning-sessions daily-statistics ai-conversations feedback-messages websocket-connections; do
   aws dynamodb describe-table \
     --table-name "Project02-SpeakTracker-$table" \
     --region ap-northeast-2 2>&1 | grep -q "ResourceNotFoundException" \
@@ -171,7 +170,7 @@ UsersTable:
 - `AIConversationsTable`
 - `FeedbackMessagesTable`
 - `WebSocketConnectionsTable`
-- `SentencesTable`
+ 
 
 **UserPool, UserPoolClient에서도 제거**
 

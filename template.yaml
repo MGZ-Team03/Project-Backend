@@ -23,7 +23,6 @@ Globals:
         AI_CONVERSATIONS_TABLE: !Ref AIConversationsTable
         FEEDBACK_TABLE: !Ref FeedbackMessagesTable
         CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-        SENTENCES_TABLE: !Ref SentencesTable
 
 Resources:
   # Cognito User Pool for authentication
@@ -100,7 +99,6 @@ Resources:
                   - !GetAtt AIConversationsTable.Arn
                   - !GetAtt FeedbackMessagesTable.Arn
                   - !GetAtt WebSocketConnectionsTable.Arn
-                  - !GetAtt SentencesTable.Arn
                   - !GetAtt SentenceAudioTable.Arn
                   - !GetAtt AsyncJobStatusTable.Arn
                   - !GetAtt PronunciationResultsTable.Arn
@@ -114,7 +112,6 @@ Resources:
                   - !Sub '${AIConversationsTable.Arn}/index/*'
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
-                  - !Sub '${SentencesTable.Arn}/index/*'
                   - !Sub '${SentenceAudioTable.Arn}/index/*'
         - PolicyName: SQSSendMessage
           PolicyDocument:
@@ -236,7 +233,6 @@ Resources:
                   - !GetAtt AIConversationsTable.Arn
                   - !GetAtt FeedbackMessagesTable.Arn
                   - !GetAtt WebSocketConnectionsTable.Arn
-                  - !GetAtt SentencesTable.Arn
                   - !Sub '${UsersTable.Arn}/index/*'
                   - !Sub '${TutorStudentsTable.Arn}/index/*'
                   - !Sub '${LearningSessionsTable.Arn}/index/*'
@@ -244,7 +240,6 @@ Resources:
                   - !Sub '${AIConversationsTable.Arn}/index/*'
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
-                  - !Sub '${SentencesTable.Arn}/index/*'
         - PolicyName: WebSocketManageConnections
           PolicyDocument:
             Version: '2012-10-17'
@@ -470,25 +465,6 @@ Resources:
         - Key: Name
           Value: WebSocket Connections Table
 
-  # 8. Sentences 테이블
-  SentencesTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub '${AWS::StackName}-sentences'
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: category
-          AttributeType: S
-        - AttributeName: sentence_id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: category
-          KeyType: HASH
-        - AttributeName: sentence_id
-          KeyType: RANGE
-      Tags:
-        - Key: Name
-          Value: Sentences Table
   # 9. Async Job Status 테이블 (SQS 비동기 작업 상태 추적)
   AsyncJobStatusTable:
     Type: AWS::DynamoDB::Table
@@ -1300,6 +1276,7 @@ Resources:
                 - dynamodb:GetItem
                 - dynamodb:Query
                 - dynamodb:UpdateItem
+                - dynamodb:Scan
               Resource:
                 - !GetAtt UsersTable.Arn
                 - !GetAtt TutorStudentsTable.Arn
@@ -1367,6 +1344,15 @@ Resources:
               Ref: MyApi
             Path: /api/auth/profile/image
             Method: post
+        API9:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/auth/studentslevel
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
 
     Metadata:
       SamResourceId: AuthFunction
@@ -1874,12 +1860,6 @@ Outputs:
     Value: !Ref WebSocketConnectionsTable
     Export:
       Name: !Sub '${AWS::StackName}-WebSocketConnectionsTable'
-
-  SentencesTableName:
-    Description: Sentences Table Name
-    Value: !Ref SentencesTable
-    Export:
-      Name: !Sub '${AWS::StackName}-SentencesTable'
 
   TTSUrl:
     Description: TTS API URL
