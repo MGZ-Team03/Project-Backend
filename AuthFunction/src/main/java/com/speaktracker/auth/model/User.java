@@ -12,6 +12,7 @@ public class User {
     private String userSub;
     private String profileImage;      // S3 URL
     private String learningLevel;     // beginner, intermediate, advanced (AI 분석 결과)
+    private String lastLevelEvalDate; // 마지막 레벨 평가 날짜 (YYYY-MM-DD)
     
     public User() {
     }
@@ -76,8 +77,16 @@ public class User {
     public String getLearningLevel() {
         return learningLevel;
     }
-    
+
     public void setLearningLevel(String learningLevel) {
         this.learningLevel = learningLevel;
+    }
+
+    public String getLastLevelEvalDate() {
+        return lastLevelEvalDate;
+    }
+
+    public void setLastLevelEvalDate(String lastLevelEvalDate) {
+        this.lastLevelEvalDate = lastLevelEvalDate;
     }
 }
