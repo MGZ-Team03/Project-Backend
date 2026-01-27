@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "project02-speaktracker"
+stack_name = "project02-speaktracker-acw-v1"
 region = "ap-northeast-2"
 
 [default.build.parameters]

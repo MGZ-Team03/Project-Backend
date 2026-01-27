@@ -1078,6 +1078,15 @@ Resources:
             Method: get
             Auth:
               Authorizer: CognitoAuthorizer
+        AiLevel:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/ai/level
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
     Metadata:
       SamResourceId: SentencesFunction
 
@@ -1163,6 +1172,7 @@ Resources:
         Variables:
           TTS_BUCKET: !Ref TTSBucket
           JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
+          SENTENCE_AUDIO_TABLE: !Ref SentenceAudioTable
           PRESIGNED_URL_EXPIRATION: '3600'
       Events:
         SQSEvent:
@@ -1774,6 +1784,27 @@ Resources:
       Dimensions:
         - Name: QueueName
           Value: !GetAtt FeedbackDLQ.QueueName
+
+
+  DashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: DashboardFunction
+      Handler: dashboard.DashboardHandler::handleRequest
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TutorStudentsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LearningSessionsTable
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /api/dashboard
+            Method: GET
 
 Outputs:
   ApiEndpoint:

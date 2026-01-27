@@ -89,6 +89,8 @@ public class DashboardController implements RequestHandler<APIGatewayProxyReques
 
         Object dashboardData = studentService.getDashboard(tutorEmail);
 
+        context.getLogger().log(dashboardData.toString());
+
         return createResponse(200, dashboardData);
     }
 
