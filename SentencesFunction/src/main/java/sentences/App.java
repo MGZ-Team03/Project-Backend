@@ -48,6 +48,11 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
     private final int presignedUrlExpiration;
     private final S3Presigner s3Presigner;
 
+    // 레벨 평가 설정 (요구사항: 최근 10개 conversation)
+    private static final int LEVEL_EVAL_CONVERSATION_LIMIT = 10;
+    private static final int LEVEL_EVAL_MAX_USER_MSG_PER_CONV = 10;
+    private static final int LEVEL_EVAL_MAX_CHARS_PER_MSG = 300;
+
     // Lazy-init (cold start 최적화): Secrets Manager 호출은 첫 요청 시점에만 수행
     private volatile ClaudeApiService claudeApiService;
     private final Object claudeInitLock = new Object();
@@ -159,6 +164,11 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             // GET /api/ai/conversations/{conversationId} - 대화 상세 조회
             if ("GET".equals(httpMethod) && path.startsWith("/api/ai/conversations/")) {
                 return handleConversationDetail(input, context);
+            }
+
+            // GET /api/ai/level - 최근 대화 기반 레벨 평가(상/중/하)
+            if ("GET".equals(httpMethod) && path.equals("/api/ai/level")) {
+                return handleAiLevel(input, context);
             }
 
             // GET /api/sentences/audio/{sessionId} - 문장 연습 오디오 상태/통계 조회
@@ -781,6 +791,111 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             e.printStackTrace();
             return createResponse(500, Map.of("success", false, "error", "Failed to get conversation detail: " + e.getMessage()));
         }
+    }
+
+    private APIGatewayProxyResponseEvent handleAiLevel(
+        APIGatewayProxyRequestEvent input, Context context
+    ) {
+        try {
+            String studentEmail = extractStudentEmailFromAuthorizerClaims(input);
+
+            // 최근 10개 conversation(messages 포함) 조회
+            List<ConversationRepository.ConversationData> conversations =
+                conversationRepository.getRecentConversationsWithMessages(studentEmail, LEVEL_EVAL_CONVERSATION_LIMIT);
+
+            if (conversations == null || conversations.isEmpty()) {
+                return createResponse(400, Map.of("success", false, "error", "not_enough_data"));
+            }
+
+            String userPrompt = buildLevelEvalUserPrompt(conversations);
+            if (userPrompt.isBlank()) {
+                return createResponse(400, Map.of("success", false, "error", "not_enough_data"));
+            }
+
+            String systemPrompt = """
+                너는 영어 학습자의 회화 레벨을 평가하는 채점자다.
+                아래는 사용자의 최근 대화 발화(user role)들이다.
+                
+                규칙:
+                - 반드시 다음 3개 중 하나만 출력: 상, 중, 하
+                - 다른 글자/설명/공백/줄바꿈/마침표/따옴표/JSON 금지
+                """;
+
+            String claudeRaw = getClaudeApiService().callClaudeApi(systemPrompt, userPrompt);
+            String level = parseLevelOnly(claudeRaw);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", Map.of("level", level));
+            return createResponse(200, response);
+
+        } catch (SecurityException e) {
+            return createResponse(401, Map.of("success", false, "error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return createResponse(400, Map.of("success", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("AI level error: " + e.getMessage());
+            return createResponse(500, Map.of("success", false, "error", "Failed to evaluate level: " + e.getMessage()));
+        }
+    }
+
+    private String buildLevelEvalUserPrompt(List<ConversationRepository.ConversationData> conversations) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("최근 대화 10개에서 사용자의 발화만 모았습니다. 아래 발화를 보고 상/중/하 중 하나로만 답하세요.\n\n");
+
+        int appended = 0;
+        for (int i = 0; i < conversations.size(); i++) {
+            ConversationRepository.ConversationData conv = conversations.get(i);
+            if (conv == null || conv.getMessages() == null || conv.getMessages().isEmpty()) {
+                continue;
+            }
+
+            // conversation 단위 구분자
+            sb.append("=== conversation ").append(i + 1).append(" (topic=").append(safe(conv.getTopic()))
+                .append(", difficulty=").append(safe(conv.getDifficulty())).append(") ===\n");
+
+            // 최근 user 메시지 최대 N개만
+            int convUserCount = 0;
+            List<ConversationMessage> msgs = conv.getMessages();
+            for (int j = msgs.size() - 1; j >= 0; j--) {
+                ConversationMessage m = msgs.get(j);
+                if (m == null) continue;
+                if (!"user".equalsIgnoreCase(m.getRole())) continue;
+                String content = m.getContent() == null ? "" : m.getContent().trim();
+                if (content.isEmpty()) continue;
+
+                if (content.length() > LEVEL_EVAL_MAX_CHARS_PER_MSG) {
+                    content = content.substring(0, LEVEL_EVAL_MAX_CHARS_PER_MSG);
+                }
+
+                sb.append("- ").append(content.replace('\n', ' ')).append("\n");
+                appended++;
+                convUserCount++;
+                if (convUserCount >= LEVEL_EVAL_MAX_USER_MSG_PER_CONV) break;
+            }
+            sb.append("\n");
+        }
+
+        return appended == 0 ? "" : sb.toString();
+    }
+
+    private String parseLevelOnly(String claudeRaw) {
+        if (claudeRaw == null) return "중";
+        String trimmed = claudeRaw.trim();
+        if (trimmed.isEmpty()) return "중";
+
+        // 가장 먼저 등장하는 상/중/하 1글자만 채택
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (c == '상' || c == '중' || c == '하') {
+                return String.valueOf(c);
+            }
+        }
+        return "중";
+    }
+
+    private String safe(String s) {
+        return s == null ? "" : s;
     }
 
     private APIGatewayProxyResponseEvent handleSentenceAudioSession(
