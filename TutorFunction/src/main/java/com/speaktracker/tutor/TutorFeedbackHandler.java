@@ -118,6 +118,8 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
                 String studentEmail = item.get("student_email").s();
                 String assignedAt = item.containsKey("assigned_at") ? item.get("assigned_at").s() : null;
                 String status = item.containsKey("status") ? item.get("status").s() : "active";
+                String room = item.containsKey("room") ? item.get("room").s() : "no room";
+                Long updatedAt = item.containsKey("updated_at") ? Long.parseLong(item.get("updated_at").n()) : null;
                 
                 // 학생 정보 조회
                 String studentName = getStudentName(studentEmail, context);
@@ -127,6 +129,8 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
                 student.put("studentName", studentName);
                 student.put("assignedAt", assignedAt);
                 student.put("status", status);
+                student.put("room", room);
+                student.put("updated_at", updatedAt);
                 
                 students.add(student);
             }
@@ -149,17 +153,23 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
      */
     private String getStudentName(String studentEmail, Context context) {
         try {
-            GetItemResponse response = dynamoDbClient.getItem(GetItemRequest.builder()
+            QueryResponse response = dynamoDbClient.query(QueryRequest.builder()
                     .tableName(USERS_TABLE)
-                    .key(Map.of("email", AttributeValue.builder().s(studentEmail).build()))
+                    .indexName("email-index")
+                    .keyConditionExpression("email = :email")
+                    .expressionAttributeValues(Map.of(
+                            ":email", AttributeValue.builder().s(studentEmail).build()
+                    ))
+                    .limit(1)
                     .build());
             
-            if (response.hasItem() && response.item().containsKey("name")) {
-                return response.item().get("name").s();
+            if (response.hasItems() && !response.items().isEmpty()) {
+                return response.items().get(0).get("name").s();
             }
-            return studentEmail.split("@")[0]; // 이름이 없으면 이메일 앞부분 사용
+            
+            return studentEmail.split("@")[0];
         } catch (Exception e) {
-            context.getLogger().log("⚠️ 학생 이름 조회 실패: " + studentEmail);
+            context.getLogger().log("⚠️ 학생 이름 조회 실패: " + studentEmail + ", error: " + e.getMessage());
             return studentEmail.split("@")[0];
         }
     }
