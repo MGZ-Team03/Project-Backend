@@ -11,6 +11,7 @@ import statistics.model.WeeklySummary;
 import statistics.repository.DailyStatisticsRepository;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
@@ -38,6 +39,11 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
                 return handleTodayStatistics(input, context);
             }
 
+            // POST /api/statistics/today - 오늘 통계 누적 저장(merge upsert)
+            if ("POST".equals(method) && path.equals("/api/statistics/today")) {
+                return handleTodayStatisticsUpsert(input, context);
+            }
+
             // GET /api/statistics/weekly
             if ("GET".equals(method) && path.equals("/api/statistics/weekly")) {
                 return handleWeeklyStatistics(input, context);
@@ -51,6 +57,39 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             context.getLogger().log("Error: " + e.getMessage());
             e.printStackTrace();
             return createResponse(500, Map.of("success", false, "error", "Internal server error"));
+        }
+    }
+
+    private APIGatewayProxyResponseEvent handleTodayStatisticsUpsert(APIGatewayProxyRequestEvent input, Context context) {
+        try {
+            if (input.getBody() == null || input.getBody().isBlank()) {
+                throw new IllegalArgumentException("request body is required");
+            }
+
+            DailyStatistics stats = objectMapper.readValue(input.getBody(), DailyStatistics.class);
+            if (stats.getStudentEmail() == null || stats.getStudentEmail().isBlank()) {
+                throw new IllegalArgumentException("student_email is required");
+            }
+
+            // date가 없으면 오늘(Asia/Seoul)로 저장
+            if (stats.getDate() == null || stats.getDate().isBlank()) {
+                String today = LocalDate.now(ZoneId.of("Asia/Seoul")).format(DateTimeFormatter.ISO_LOCAL_DATE);
+                stats.setDate(today);
+            }
+
+            statisticsRepository.saveDailyStatistics(stats);
+
+            Map<String, Object> responseBody = new LinkedHashMap<>();
+            responseBody.put("success", true);
+            responseBody.put("data", stats);
+            return createResponse(200, responseBody);
+
+        } catch (IllegalArgumentException e) {
+            return createResponse(400, Map.of("success", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            context.getLogger().log("Error saving today statistics: " + e.getMessage());
+            e.printStackTrace();
+            return createResponse(500, Map.of("success", false, "error", "Failed to save statistics"));
         }
     }
 
