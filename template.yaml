@@ -5,14 +5,6 @@ Description: 'Project02-SpeakTracker
   Sample SAM Template for Project02-SpeakTracker
 
   '
-Parameters:
-  SesSenderEmail:
-    Type: String
-    Description: Verified email address for sending SES emails
-  FrontendUrl:
-    Type: String
-    Description: Frontend application URL
-
 Globals:
   Function:
     Timeout: 30
@@ -32,17 +24,12 @@ Globals:
         FEEDBACK_TABLE: !Ref FeedbackMessagesTable
         CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
         SENTENCES_TABLE: !Ref SentencesTable
-        SENTENCE_AUDIO_TABLE: !Ref SentenceAudioTable
 
 Resources:
   # Cognito User Pool for authentication
   UserPool:
     Type: AWS::Cognito::UserPool
-    # 스택 삭제/업데이트 시에도 사용자 데이터 보호
-#    DeletionPolicy: Retain
-#    UpdateReplacePolicy: Retain
     Properties:
-      # 동적 네이밍: 여러 환경(dev, staging, prod) 배포 시 충돌 방지
       UserPoolName: !Sub "${AWS::StackName}-userpool"
       AutoVerifiedAttributes:
         - email
@@ -52,7 +39,7 @@ Resources:
         - Name: email
           AttributeDataType: String
           Required: true
-          Mutable: true  # 이메일 수정 허용
+          Mutable: true
         - Name: name
           AttributeDataType: String
           Required: true
@@ -60,7 +47,6 @@ Resources:
       Policies:
         PasswordPolicy:
           MinimumLength: 8
-          # 개발 편의성을 위해 비밀번호 정책 완화
           RequireUppercase: false
           RequireLowercase: false
           RequireNumbers: false
@@ -69,18 +55,14 @@ Resources:
   # Cognito User Pool Client
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
-    # 스택 삭제/업데이트 시에도 클라이언트 설정 보호
     Properties:
       ClientName: !Sub "${AWS::StackName}-client"
       UserPoolId: !Ref UserPool
       ExplicitAuthFlows:
-        # 1. [보안 권장] Secure Remote Password 인증 - 비밀번호가 네트워크 전송 안 됨
         - ALLOW_USER_SRP_AUTH
-        # 2. [필수] 토큰 갱신 - Access Token 만료 시 재로그인 없이 갱신
         - ALLOW_REFRESH_TOKEN_AUTH
-        # 3. [테스트/개발] 일반 아이디/비밀번호 인증 - Postman, Curl 테스트용
         - ALLOW_USER_PASSWORD_AUTH
-      GenerateSecret: false  # 웹/모바일 앱은 비밀키를 안전하게 보관할 수 없으므로 false
+      GenerateSecret: false
 
   # IAM Roles and DynamoDB Tables
   CommonLambdaRole:
@@ -120,6 +102,8 @@ Resources:
                   - !GetAtt WebSocketConnectionsTable.Arn
                   - !GetAtt SentencesTable.Arn
                   - !GetAtt SentenceAudioTable.Arn
+                  - !GetAtt AsyncJobStatusTable.Arn
+                  - !GetAtt PronunciationResultsTable.Arn
                   # GSI도 포함
                   - !Sub '${UsersTable.Arn}/index/*'
                   - !Sub '${TutorStudentsTable.Arn}/index/*'
@@ -131,15 +115,7 @@ Resources:
                   - !Sub '${FeedbackMessagesTable.Arn}/index/*'
                   - !Sub '${WebSocketConnectionsTable.Arn}/index/*'
                   - !Sub '${SentencesTable.Arn}/index/*'
-        - PolicyName: WebSocketManageConnections
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'execute-api:ManageConnections'
-                Resource:
-                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+                  - !Sub '${SentenceAudioTable.Arn}/index/*'
         - PolicyName: SQSSendMessage
           PolicyDocument:
             Version: '2012-10-17'
@@ -151,6 +127,16 @@ Resources:
                 Resource:
                   - !GetAtt FeedbackQueue.Arn
                   - !GetAtt NotificationQueue.Arn
+
+        - PolicyName: WebSocketManageConnections
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'execute-api:ManageConnections'
+                Resource:
+                  - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
 
         - PolicyName: SecretsManagerReadClaudeKey
           PolicyDocument:
@@ -190,6 +176,16 @@ Resources:
                   - s3:ListBucket
                 Resource:
                   - !GetAtt TTSBucket.Arn
+        - PolicyName: S3ProfileImagesAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - !Sub '${ProfileImagesBucket.Arn}/*'
         - PolicyName: JobStatusTableAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -211,7 +207,7 @@ Resources:
                   - ses:SendRawEmail
                 Resource: '*'
 
-  # WebSocket 전용 Role
+  # WebSocket Lambda Role
   WebSocketLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -266,11 +262,22 @@ Resources:
       TableName: !Sub '${AWS::StackName}-users'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
+        - AttributeName: role
+          AttributeType: S
         - AttributeName: email
           AttributeType: S
       KeySchema:
-        - AttributeName: email
+        - AttributeName: role
           KeyType: HASH
+        - AttributeName: email
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
       Tags:
         - Key: Name
           Value: Users Table
@@ -352,6 +359,9 @@ Resources:
           KeyType: HASH
         - AttributeName: date
           KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
       Tags:
         - Key: Name
           Value: Daily Statistics Table
@@ -391,6 +401,8 @@ Resources:
   # 6. Feedback Messages 테이블
   FeedbackMessagesTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub '${AWS::StackName}-feedback-messages'
       BillingMode: PAY_PER_REQUEST
@@ -477,7 +489,6 @@ Resources:
       Tags:
         - Key: Name
           Value: Sentences Table
-
   # 9. Async Job Status 테이블 (SQS 비동기 작업 상태 추적)
   AsyncJobStatusTable:
     Type: AWS::DynamoDB::Table
@@ -835,7 +846,7 @@ Resources:
     Properties:
       CodeUri: HelloWorldFunction
       Handler: helloworld.App::handleRequest
-      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Role: !GetAtt CommonLambdaRole.Arn
       Events:
         HelloWorld:
           Type: Api
@@ -852,13 +863,12 @@ Resources:
     Properties:
       CodeUri: TutorFunction
       Handler: com.speaktracker.tutor.TutorFeedbackHandler::handleRequest
-      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Role: !GetAtt CommonLambdaRole.Arn
       Environment:
         Variables:
-          WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
-          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-          FEEDBACK_TABLE: !Ref FeedbackMessagesTable
           FEEDBACK_QUEUE_URL: !Ref FeedbackQueue
+          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
+          CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
           USERS_TABLE: !Ref UsersTable
       Events:
@@ -915,7 +925,7 @@ Resources:
     Properties:
       CodeUri: SessionFunction
       Handler: session.App::handleRequest
-      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Role: !GetAtt CommonLambdaRole.Arn
       Events:
         API1:
           Type: Api
@@ -966,7 +976,7 @@ Resources:
     Properties:
       CodeUri: SentencesFunction
       Handler: sentences.App::handleRequest
-      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Role: !GetAtt CommonLambdaRole.Arn
       Environment:
         Variables:
           CLAUDE_API_KEY_SECRET_ID: team3/claude_api_key
@@ -974,6 +984,7 @@ Resources:
           JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
           TTS_QUEUE_URL: !Ref TTSQueue
           TTS_BUCKET: !Ref TTSBucket
+          SENTENCE_AUDIO_TABLE: !Ref SentenceAudioTable
           PRESIGNED_URL_EXPIRATION: '3600'
       Events:
         API1:
@@ -1046,6 +1057,24 @@ Resources:
             RestApiId:
               Ref: MyApi
             Path: /api/ai/chat/status/{requestId}
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
+        ConversationList:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/ai/conversations
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
+        ConversationDetail:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/ai/conversations/{conversationId}
             Method: get
             Auth:
               Authorizer: CognitoAuthorizer
@@ -1172,12 +1201,38 @@ Resources:
     Metadata:
       SamResourceId: STTFunction
 
+  DashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: DashboardFunction
+      Handler: dashboard.DashboardHandler::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn
+      Environment:
+        Variables:
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+          USERS_TABLE: !Ref UsersTable
+          SESSIONS_TABLE: !Ref LearningSessionsTable
+      Events:
+        GetDashboard:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyApi
+            Path: /api/dashboard
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: DashboardFunction
+
   StatisticsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: StatisticsFunction
       Handler: statistics.App::handleRequest
-      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Role: !GetAtt CommonLambdaRole.Arn
+      Environment:
+        Variables:
+          STATISTICS_TABLE: !Ref DailyStatisticsTable
       Events:
         API1:
           Type: Api
@@ -1200,7 +1255,7 @@ Resources:
     Properties:
       CodeUri: AuthFunction
       Handler: com.speaktracker.auth.AuthHandler::handleRequest
-      Role: !GetAtt CommonLambdaRole.Arn  # ← 공통 Role 사용!
+      Role: !GetAtt CommonLambdaRole.Arn
       Environment:
         Variables:
           USER_POOL_ID: !Ref UserPool
@@ -1210,33 +1265,33 @@ Resources:
           PROFILE_IMAGES_BUCKET: !Ref ProfileImagesBucket
       Policies:
         - Statement:
-          - Effect: Allow
-            Action:
-              - cognito-idp:AdminInitiateAuth
-              - cognito-idp:AdminCreateUser
-              - cognito-idp:AdminSetUserPassword
-              - cognito-idp:SignUp
-              - cognito-idp:InitiateAuth
-              - cognito-idp:GetUser
-              - cognito-idp:AdminGetUser
-              - cognito-idp:ConfirmSignUp
-            Resource: !GetAtt UserPool.Arn
-          - Effect: Allow
-            Action:
-              - dynamodb:PutItem
-              - dynamodb:GetItem
-              - dynamodb:Query
-              - dynamodb:UpdateItem
-            Resource:
-              - !GetAtt UsersTable.Arn
-              - !GetAtt TutorStudentsTable.Arn
-              - !Sub "${TutorStudentsTable.Arn}/index/*"
-          - Effect: Allow
-            Action:
-              - s3:PutObject
-              - s3:GetObject
-            Resource:
-              - !Sub '${ProfileImagesBucket.Arn}/*'
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminInitiateAuth
+                - cognito-idp:AdminCreateUser
+                - cognito-idp:AdminSetUserPassword
+                - cognito-idp:SignUp
+                - cognito-idp:InitiateAuth
+                - cognito-idp:GetUser
+                - cognito-idp:AdminGetUser
+                - cognito-idp:ConfirmSignUp
+              Resource: !GetAtt UserPool.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Resource:
+                - !GetAtt UsersTable.Arn
+                - !GetAtt TutorStudentsTable.Arn
+                - !Sub "${TutorStudentsTable.Arn}/index/*"
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource:
+                - !Sub '${ProfileImagesBucket.Arn}/*'
       Events:
         API1:
           Type: Api
@@ -1298,85 +1353,50 @@ Resources:
     Metadata:
       SamResourceId: AuthFunction
 
+  StudentStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: StudentStatusFunction
+      Handler: com.speaktracker.studentstatus.StudentStatusHandler::handleRequest
+      Role: !GetAtt CommonLambdaRole.Arn
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
+      Events:
+        API1:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/student-status
+            Method: get
+        API2:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/student-status
+            Method: post
+    Metadata:
+      SamResourceId: StudentStatusFunction
+
+  # ========================================
+  # WebSocket Function
+  # ========================================
   SentencesWebSocketFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: SentencesWebSocketFunction
-      Handler:  websocket.SocketHandler::handleRequest
+      Handler: websocket.SocketHandler::handleRequest
       Role: !GetAtt WebSocketLambdaRole.Arn
       Environment:
         Variables:
-          TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action:
-                - 'execute-api:ManageConnections'
-              Resource:
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
     Metadata:
       SamResourceId: SentencesWebSocketFunction
 
-  # ========================================
-  # Feedback Persistence Function (SQS Consumer)
-  # ========================================
-  FeedbackPersistenceFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: FeedbackPersistenceFunction
-      Handler: com.speaktracker.FeedbackPersistenceHandler::handleRequest
-      Runtime: java21
-      Timeout: 60
-      MemorySize: 512
-      Environment:
-        Variables:
-          FEEDBACK_TABLE: !Ref FeedbackMessagesTable
-      Events:
-        SQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt FeedbackQueue.Arn
-            BatchSize: 10
-            MaximumBatchingWindowInSeconds: 5
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref FeedbackMessagesTable
-        - SQSPollerPolicy:
-            QueueName: !GetAtt FeedbackQueue.QueueName
-    Metadata:
-      SamResourceId: FeedbackPersistenceFunction
-
-
-  MyApi:
-    Type: AWS::Serverless::Api
-    Properties:
-      StageName: Dev
-      # 프론트엔드 연결을 위한 상세 CORS 설정
-      Cors:
-        AllowOrigin: "'*'"
-        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Language-Code,X-Mime-Type'"
-        MaxAge: "'3600'"
-      # 4XX, 5XX 에러 응답에도 CORS 헤더 추가 (인증 실패 시 CORS 에러 방지)
-      GatewayResponses:
-        DEFAULT_4XX:
-          ResponseParameters:
-            Headers:
-              Access-Control-Allow-Origin: "'*'"
-              Access-Control-Allow-Headers: "'*'"
-        DEFAULT_5XX:
-          ResponseParameters:
-            Headers:
-              Access-Control-Allow-Origin: "'*'"
-              Access-Control-Allow-Headers: "'*'"
-      # Cognito 인증기 설정
-      Auth:
-        Authorizers:
-          CognitoAuthorizer:
-            UserPoolArn: !GetAtt UserPool.Arn
-            IdentitySource: method.request.header.Authorization
-
+  # WebSocket API Gateway
   WebSocketApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
@@ -1417,16 +1437,6 @@ Resources:
       RouteKey: $disconnect
       Target: !Sub 'integrations/${WebSocketIntegration}'
 
-  # status
-  # student 상태 5초 간격으로 전달 action/inaction/idle
-  StatusRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: status
-      Target: !Sub 'integrations/${WebSocketIntegration}'
-
-
   # $default Route
   DefaultRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -1435,13 +1445,68 @@ Resources:
       RouteKey: $default
       Target: !Sub 'integrations/${WebSocketIntegration}'
 
-  # Stage
+  # WebSocket Stage
   WebSocketStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
       StageName: Dev
       ApiId: !Ref WebSocketApi
       AutoDeploy: true
+
+  # ========================================
+  # Feedback Persistence Function (SQS Consumer)
+  # ========================================
+  FeedbackPersistenceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FeedbackPersistenceFunction
+      Handler: com.speaktracker.FeedbackPersistenceHandler::handleRequest
+      Runtime: java21
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          FEEDBACK_TABLE: !Ref FeedbackMessagesTable
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt FeedbackQueue.Arn
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 5
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FeedbackMessagesTable
+        - SQSPollerPolicy:
+            QueueName: !GetAtt FeedbackQueue.QueueName
+    Metadata:
+      SamResourceId: FeedbackPersistenceFunction
+
+  MyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Dev
+      Cors:
+        AllowOrigin: "'*'"
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Language-Code,X-Mime-Type'"
+        MaxAge: "'3600'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'*'"
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+            IdentitySource: method.request.header.Authorization
 
   # ========================================
   # SQS Queues for Feedback Persistence
@@ -1451,7 +1516,7 @@ Resources:
     Properties:
       QueueName: !Sub '${AWS::StackName}-tutor-feedback-queue'
       VisibilityTimeout: 300
-      MessageRetentionPeriod: 1209600  # 14일
+      MessageRetentionPeriod: 1209600
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt FeedbackDLQ.Arn
         maxReceiveCount: 3
@@ -1460,7 +1525,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub '${AWS::StackName}-tutor-feedback-dlq'
-      MessageRetentionPeriod: 1209600  # 14일
+      MessageRetentionPeriod: 1209600
 
   # ========================================
   # SQS Queues for Notification Persistence
@@ -1470,7 +1535,7 @@ Resources:
     Properties:
       QueueName: !Sub '${AWS::StackName}-tutor-registration-notification-queue'
       VisibilityTimeout: 300
-      MessageRetentionPeriod: 1209600  # 14일
+      MessageRetentionPeriod: 1209600
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt NotificationDLQ.Arn
         maxReceiveCount: 3
@@ -1479,7 +1544,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub '${AWS::StackName}-tutor-registration-notification-dlq'
-      MessageRetentionPeriod: 1209600  # 14일
+      MessageRetentionPeriod: 1209600
 
   # ========================================
   # DynamoDB Tables for Tutor Registration
@@ -1578,10 +1643,11 @@ Resources:
           TUTOR_REQUESTS_TABLE: !Ref TutorRequestsTable
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
-          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
+          NOTIFICATIONS_TABLE: !Ref NotificationsTable
           NOTIFICATION_QUEUE_URL: !Ref NotificationQueue
-          SES_SENDER_EMAIL: !Ref SesSenderEmail
-          FRONTEND_URL: !Ref FrontendUrl
+          SES_SENDER_EMAIL: noreply@example.com
+          FRONTEND_URL: https://example.com
+          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -1595,11 +1661,6 @@ Resources:
             QueueName: !GetAtt NotificationQueue.QueueName
         - SESCrudPolicy:
             IdentityName: "*"
-        - Statement:
-          - Effect: Allow
-            Action:
-              - execute-api:ManageConnections
-            Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
       Events:
         GetTutors:
           Type: Api
@@ -1698,9 +1759,6 @@ Resources:
         - SQSPollerPolicy:
             QueueName: !GetAtt NotificationQueue.QueueName
 
-  # 알림 조회 API Lambda (이벤트는 TutorRegisterFunction에서 처리)
-  # NotificationQueryFunction은 더 이상 사용하지 않음 - TutorRegisterFunction이 알림 API 담당
-
   # DLQ 모니터링 알람
   FeedbackDLQAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -1716,23 +1774,6 @@ Resources:
       Dimensions:
         - Name: QueueName
           Value: !GetAtt FeedbackDLQ.QueueName
-
-#  # Lambda에 WebSocket 연결 관리 권한 부여
-#  WebSocketPolicy:
-#    Type: AWS::IAM::Policy
-#    Properties:
-#      PolicyName: WebSocketManageConnectionsPolicy
-#      PolicyDocument:
-#        Version: '2012-10-17'
-#        Statement:
-#          - Effect: Allow
-#            Action:
-#              - 'execute-api:ManageConnections'
-#            Resource:
-#              - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-#      Roles:
-#        - !Ref SentencesWebSocketFunctionRole
-
 
 Outputs:
   ApiEndpoint:
@@ -1757,6 +1798,10 @@ Outputs:
   AuthUrl:
     Value:
       Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/auth
+  StudentStatusApiEndpoint:
+    Description: "API Gateway endpoint URL for Student Status"
+    Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/student-status"
+
   UserPoolId:
     Description: Cognito User Pool ID
     Value: !Ref UserPool
@@ -1770,10 +1815,6 @@ Outputs:
   UserPoolArn:
     Description: Cognito User Pool ARN
     Value: !GetAtt UserPool.Arn
-
-  WebSocketURL:
-    Description: WebSocket API URL
-    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
 
   UsersTableName:
     Description: Users Table Name

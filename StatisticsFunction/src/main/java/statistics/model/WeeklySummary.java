@@ -30,6 +30,9 @@ public class WeeklySummary {
     @JsonProperty("avg_net_speaking_density")
     private Double avgNetSpeakingDensity;
 
+    @JsonProperty("avg_response_quality")
+    private Double avgResponseQuality;
+
     @JsonProperty("active_days")
     private Integer activeDays;
 
@@ -97,6 +100,14 @@ public class WeeklySummary {
 
     public void setAvgNetSpeakingDensity(Double avgNetSpeakingDensity) {
         this.avgNetSpeakingDensity = avgNetSpeakingDensity;
+    }
+
+    public Double getAvgResponseQuality() {
+        return avgResponseQuality;
+    }
+
+    public void setAvgResponseQuality(Double avgResponseQuality) {
+        this.avgResponseQuality = avgResponseQuality;
     }
 
     public Integer getActiveDays() {

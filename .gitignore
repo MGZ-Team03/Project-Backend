@@ -39,4 +39,8 @@ out/
 
 ### VS Code ###
 .vscode/
-.aws-sam/
+.claude/
+
+### DS_Store ###
+*/.DS_Store
+.DS_Store

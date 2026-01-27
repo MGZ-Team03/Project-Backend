@@ -170,4 +170,18 @@ public class WebSocketHelper {
 
         return sendNotification(studentEmail, "TUTOR_REQUEST_REJECTED", data);
     }
+
+    /**
+     * 학생 추가 알림 (튜터에게) - 승인 후 대시보드 갱신용
+     */
+    public boolean sendStudentAddedNotification(String tutorEmail, String studentEmail, 
+                                                 String studentName, String assignedAt) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("student_email", studentEmail);
+        data.put("student_name", studentName);
+        data.put("assigned_at", assignedAt);
+        data.put("status", "active");
+
+        return sendNotification(tutorEmail, "STUDENT_ADDED", data);
+    }
 }

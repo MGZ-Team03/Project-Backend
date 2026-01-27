@@ -4,6 +4,7 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import statistics.model.DailyStatistics;
 import statistics.model.WeeklySummary;
@@ -22,6 +23,8 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         String tableName = System.getenv("STATISTICS_TABLE");
         this.statisticsRepository = new DailyStatisticsRepository(tableName);
         this.objectMapper = new ObjectMapper();
+        // 빈 배열/빈 값은 응답에서 생략 (프론트 정책: 빈 배열 미사용)
+        this.objectMapper.setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
     }
 
     @Override
@@ -109,6 +112,14 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         List<Double> allPaceRatios = new ArrayList<>();
         List<Long> allResponseLatencies = new ArrayList<>();
         List<Double> allNetSpeakingDensities = new ArrayList<>();
+        List<Double> allResponseQualities = new ArrayList<>();
+
+        double weightedPaceSum = 0.0;
+        long weightedPaceCount = 0;
+        double weightedLatencySum = 0.0;
+        long weightedLatencyCount = 0;
+        double weightedQualitySum = 0.0;
+        long weightedQualityCount = 0;
 
         for (DailyStatistics stats : weeklyStats) {
             if (stats.getSessionsCount() != null && stats.getSessionsCount() > 0) {
@@ -119,14 +130,38 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
                 totalPracticeCount += stats.getPracticeCount() != null ? stats.getPracticeCount() : 0;
                 totalChatTurns += stats.getChatTurnsCount() != null ? stats.getChatTurnsCount() : 0;
 
-                if (stats.getPaceRatios() != null) {
+                if (stats.getPaceRatios() != null && !stats.getPaceRatios().isEmpty()) {
                     allPaceRatios.addAll(stats.getPaceRatios());
+                } else if (stats.getAvgPaceRatio() != null
+                    && stats.getPaceRatioCount() != null
+                    && stats.getPaceRatioCount() > 0) {
+                    weightedPaceSum += stats.getAvgPaceRatio() * stats.getPaceRatioCount();
+                    weightedPaceCount += stats.getPaceRatioCount();
                 }
-                if (stats.getResponseLatencies() != null) {
+                if (stats.getResponseLatencies() != null && !stats.getResponseLatencies().isEmpty()) {
                     allResponseLatencies.addAll(stats.getResponseLatencies());
+                } else if (stats.getAvgResponseLatency() != null
+                    && stats.getResponseLatencyCount() != null
+                    && stats.getResponseLatencyCount() > 0) {
+                    weightedLatencySum += stats.getAvgResponseLatency() * stats.getResponseLatencyCount();
+                    weightedLatencyCount += stats.getResponseLatencyCount();
                 }
                 if (stats.getAvgNetSpeakingDensity() != null && stats.getAvgNetSpeakingDensity() > 0) {
                     allNetSpeakingDensities.add(stats.getAvgNetSpeakingDensity());
+                }
+
+                // 응답 품질: 리스트가 있으면 리스트 사용, 없으면 avg+count 가중평균
+                if (stats.getResponseQualities() != null && !stats.getResponseQualities().isEmpty()) {
+                    for (var q : stats.getResponseQualities()) {
+                        if (q != null && q.getOverallScore() != null) {
+                            allResponseQualities.add(q.getOverallScore());
+                        }
+                    }
+                } else if (stats.getAvgResponseQuality() != null
+                    && stats.getResponseQualityCount() != null
+                    && stats.getResponseQualityCount() > 0) {
+                    weightedQualitySum += stats.getAvgResponseQuality() * stats.getResponseQualityCount();
+                    weightedQualityCount += stats.getResponseQualityCount();
                 }
             }
         }
@@ -142,12 +177,18 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         if (!allPaceRatios.isEmpty()) {
             double avgPaceRatio = allPaceRatios.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
             summary.setAvgPaceRatio(Math.round(avgPaceRatio * 100.0) / 100.0);
+        } else if (weightedPaceCount > 0) {
+            double avgPaceRatio = weightedPaceSum / weightedPaceCount;
+            summary.setAvgPaceRatio(Math.round(avgPaceRatio * 100.0) / 100.0);
         } else {
             summary.setAvgPaceRatio(0.0);
         }
 
         if (!allResponseLatencies.isEmpty()) {
             double avgResponseLatency = allResponseLatencies.stream().mapToLong(Long::longValue).average().orElse(0.0);
+            summary.setAvgResponseLatency(Math.round(avgResponseLatency * 100.0) / 100.0);
+        } else if (weightedLatencyCount > 0) {
+            double avgResponseLatency = weightedLatencySum / weightedLatencyCount;
             summary.setAvgResponseLatency(Math.round(avgResponseLatency * 100.0) / 100.0);
         } else {
             summary.setAvgResponseLatency(0.0);
@@ -158,6 +199,16 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             summary.setAvgNetSpeakingDensity(Math.round(avgNetSpeakingDensity * 100.0) / 100.0);
         } else {
             summary.setAvgNetSpeakingDensity(0.0);
+        }
+
+        if (!allResponseQualities.isEmpty()) {
+            double avgResponseQuality = allResponseQualities.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+            summary.setAvgResponseQuality(Math.round(avgResponseQuality * 100.0) / 100.0);
+        } else if (weightedQualityCount > 0) {
+            double avgResponseQuality = weightedQualitySum / weightedQualityCount;
+            summary.setAvgResponseQuality(Math.round(avgResponseQuality * 100.0) / 100.0);
+        } else {
+            summary.setAvgResponseQuality(0.0);
         }
 
         return summary;
@@ -175,8 +226,13 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         stats.setAvgPaceRatio(0.0);
         stats.setAvgResponseLatency(0.0);
         stats.setAvgNetSpeakingDensity(0.0);
+        stats.setAvgResponseQuality(0.0);
         stats.setPaceRatios(new ArrayList<>());
         stats.setResponseLatencies(new ArrayList<>());
+        stats.setResponseQualities(new ArrayList<>());
+        stats.setPaceRatioCount(0);
+        stats.setResponseLatencyCount(0);
+        stats.setResponseQualityCount(0);
         return stats;
     }
 
@@ -184,7 +240,7 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         Map<String, String> headers = new HashMap<>();
         headers.put("Content-Type", "application/json");
         headers.put("Access-Control-Allow-Origin", "*");
-        headers.put("Access-Control-Allow-Methods", "GET, OPTIONS");
+        headers.put("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         headers.put("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
         try {

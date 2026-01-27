@@ -4,20 +4,15 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2WebSocketResponse;
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import lombok.RequiredArgsConstructor;
-import websocket.dto.StatusRequest;
-import websocket.dto.WebSocketRequest;
 import websocket.service.SocketService;
 
-import java.lang.reflect.Type;
+import java.util.Map;
 
 @RequiredArgsConstructor
 public class SocketController implements RequestHandler<APIGatewayV2WebSocketEvent, APIGatewayV2WebSocketResponse> {
 
     private final SocketService socketService;
-    private final Gson gson;
 
     @Override
     public APIGatewayV2WebSocketResponse handleRequest(APIGatewayV2WebSocketEvent event, Context context) {
@@ -31,18 +26,13 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
                     return handleConnect(event, context);
 
                 case "$disconnect":
-                    return socketService.handleDisconnect(event, event.getRequestContext().getConnectionId());
-
-                case "status":
-                    Type type = new TypeToken<WebSocketRequest<StatusRequest>>(){}.getType();
-                    WebSocketRequest<StatusRequest> request =
-                            gson.fromJson(event.getBody(), type);
-
-                    return socketService.handleStatus(event, request);
+                    context.getLogger().log("Disconnect");
+                    String connectionId = event.getRequestContext().getConnectionId();
+                    return socketService.handleDisconnect(connectionId);
 
                 case "$default":
                 default:
-                    return createResponse(400, "Unsupported route: " + routeKey);
+                    return createResponse(200, "OK");
             }
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
@@ -50,34 +40,21 @@ public class SocketController implements RequestHandler<APIGatewayV2WebSocketEve
         }
     }
 
-    // 로그인 후 start inactive
-    // 방 (ai, 문장) 입장 시 active -> 5초에 한번 씩 상태 전달
     private APIGatewayV2WebSocketResponse handleConnect(APIGatewayV2WebSocketEvent event, Context context) {
         String connectionId = event.getRequestContext().getConnectionId();
-        
+        context.getLogger().log("Client connected: " + connectionId);
+
         // 쿼리 파라미터에서 user_email 추출
-        String userEmail = null;
-        if (event.getQueryStringParameters() != null) {
-            userEmail = event.getQueryStringParameters().get("user_email");
-        }
-        
-        context.getLogger().log("Client connected: " + connectionId + " | User: " + userEmail);
-        
-        // CONNECTIONS_TABLE에 connectionId 저장 (튜터 피드백용)
+        Map<String, String> queryParams = event.getQueryStringParameters();
+        String userEmail = queryParams != null ? queryParams.get("user_email") : null;
+        context.getLogger().log("User email from query: " + userEmail);
+
         if (userEmail != null && !userEmail.isEmpty()) {
             socketService.saveConnection(connectionId, userEmail);
         }
 
         return createResponse(200, "Connected");
     }
-
-//    private APIGatewayV2WebSocketResponse handleDisconnect(APIGatewayV2WebSocketEvent event, Context context) {
-//        String connectionId = event.getRequestContext().getConnectionId();
-//        context.getLogger().log("Client disconnected: " + connectionId);
-//
-//        return createResponse(200, "Disconnected");
-//    }
-
 
     public static APIGatewayV2WebSocketResponse createResponse(int statusCode, String message) {
         APIGatewayV2WebSocketResponse response = new APIGatewayV2WebSocketResponse();

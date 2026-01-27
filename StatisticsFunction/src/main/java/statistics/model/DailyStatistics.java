@@ -3,6 +3,7 @@ package statistics.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -45,6 +46,24 @@ public class DailyStatistics {
 
     @JsonProperty("response_latencies")
     private List<Long> responseLatencies;
+
+    // 프론트가 리스트를 못 보내는 경우를 위한 count 필드
+    // (주간 가중평균 계산 및 메모리/전송량 절감)
+    @JsonProperty("pace_ratio_count")
+    private Integer paceRatioCount;
+
+    @JsonProperty("response_latency_count")
+    private Integer responseLatencyCount;
+
+    // 새로 추가된 필드
+    @JsonProperty("avg_response_quality")
+    private Double avgResponseQuality;
+
+    @JsonProperty("response_qualities")
+    private List<ResponseQuality> responseQualities;
+
+    @JsonProperty("response_quality_count")
+    private Integer responseQualityCount;
 
     public DailyStatistics() {}
 
@@ -144,6 +163,46 @@ public class DailyStatistics {
         this.responseLatencies = responseLatencies;
     }
 
+    public Integer getPaceRatioCount() {
+        return paceRatioCount;
+    }
+
+    public void setPaceRatioCount(Integer paceRatioCount) {
+        this.paceRatioCount = paceRatioCount;
+    }
+
+    public Integer getResponseLatencyCount() {
+        return responseLatencyCount;
+    }
+
+    public void setResponseLatencyCount(Integer responseLatencyCount) {
+        this.responseLatencyCount = responseLatencyCount;
+    }
+
+    public Double getAvgResponseQuality() {
+        return avgResponseQuality;
+    }
+
+    public void setAvgResponseQuality(Double avgResponseQuality) {
+        this.avgResponseQuality = avgResponseQuality;
+    }
+
+    public List<ResponseQuality> getResponseQualities() {
+        return responseQualities;
+    }
+
+    public void setResponseQualities(List<ResponseQuality> responseQualities) {
+        this.responseQualities = responseQualities;
+    }
+
+    public Integer getResponseQualityCount() {
+        return responseQualityCount;
+    }
+
+    public void setResponseQualityCount(Integer responseQualityCount) {
+        this.responseQualityCount = responseQualityCount;
+    }
+
     /**
      * 빈 통계 객체 생성 (데이터 없는 날짜용)
      */
@@ -159,6 +218,13 @@ public class DailyStatistics {
         stats.setAvgPaceRatio(null);
         stats.setAvgResponseLatency(null);
         stats.setAvgNetSpeakingDensity(null);
+        stats.setAvgResponseQuality(null);
+        stats.setPaceRatios(new ArrayList<>());
+        stats.setResponseLatencies(new ArrayList<>());
+        stats.setResponseQualities(new ArrayList<>());
+        stats.setPaceRatioCount(0);
+        stats.setResponseLatencyCount(0);
+        stats.setResponseQualityCount(0);
         return stats;
     }
 }

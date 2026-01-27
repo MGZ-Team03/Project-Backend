@@ -50,8 +50,11 @@ public class UserService {
         if (request.getName() != null && !request.getName().isEmpty()) {
             user.setName(request.getName());
         }
-        if (request.getProfileImage() != null && !request.getProfileImage().isEmpty()) {
-            user.setProfileImage(request.getProfileImage());
+        // profileImage: null이 아니면 업데이트 (빈 문자열은 null로 변환하여 이미지 제거)
+        if (request.getProfileImage() != null) {
+            // 빈 문자열이면 null로 설정 (이미지 제거)
+            String newImage = request.getProfileImage().isEmpty() ? null : request.getProfileImage();
+            user.setProfileImage(newImage);
         }
         
         userRepository.update(user);

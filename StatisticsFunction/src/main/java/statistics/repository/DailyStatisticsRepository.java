@@ -4,9 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import statistics.model.DailyStatistics;
+import statistics.model.ResponseQuality;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -51,6 +53,114 @@ public class DailyStatisticsRepository {
         }
 
         return parseStatistics(response.item());
+    }
+
+    /**
+     * 일별 통계 저장 (Upsert - merge 방식)
+     * - 요청에 포함된 필드만 저장(SET)하고, 없는 필드는 기존 값을 유지합니다.
+     * - 프론트가 메모리/전송량 때문에 리스트(pace_ratios/response_latencies 등)를 생략할 수 있으므로
+     *   PutItem(덮어쓰기) 대신 UpdateItem(merge upsert)을 사용합니다.
+     */
+    public void saveDailyStatistics(DailyStatistics stats) {
+        try {
+            // 필수 키
+            Map<String, AttributeValue> key = new HashMap<>();
+            key.put("student_email", AttributeValue.builder().s(stats.getStudentEmail()).build());
+            key.put("date", AttributeValue.builder().s(stats.getDate()).build());
+
+            // TTL 설정 (30일 후 자동 삭제)
+            long ttl = Instant.now().plusSeconds(30 * 24 * 60 * 60).getEpochSecond();
+            Map<String, AttributeValue> expressionValues = new HashMap<>();
+            expressionValues.put(":ttl", AttributeValue.builder().n(String.valueOf(ttl)).build());
+
+            StringBuilder updateExpression = new StringBuilder("SET ttl = :ttl");
+
+            // 기본 통계
+            if (stats.getTotalRecordingTime() != null) {
+                updateExpression.append(", total_recording_time = :trt");
+                expressionValues.put(":trt", AttributeValue.builder().n(String.valueOf(stats.getTotalRecordingTime())).build());
+            }
+            if (stats.getTotalSpeakingTime() != null) {
+                updateExpression.append(", total_speaking_time = :tst");
+                expressionValues.put(":tst", AttributeValue.builder().n(String.valueOf(stats.getTotalSpeakingTime())).build());
+            }
+            if (stats.getSessionsCount() != null) {
+                updateExpression.append(", sessions_count = :sc");
+                expressionValues.put(":sc", AttributeValue.builder().n(String.valueOf(stats.getSessionsCount())).build());
+            }
+            if (stats.getPracticeCount() != null) {
+                updateExpression.append(", practice_count = :pc");
+                expressionValues.put(":pc", AttributeValue.builder().n(String.valueOf(stats.getPracticeCount())).build());
+            }
+            if (stats.getChatTurnsCount() != null) {
+                updateExpression.append(", chat_turns_count = :ctc");
+                expressionValues.put(":ctc", AttributeValue.builder().n(String.valueOf(stats.getChatTurnsCount())).build());
+            }
+
+            // 3대 지표 평균
+            if (stats.getAvgPaceRatio() != null) {
+                updateExpression.append(", avg_pace_ratio = :apr");
+                expressionValues.put(":apr", AttributeValue.builder().n(String.valueOf(stats.getAvgPaceRatio())).build());
+            }
+            if (stats.getAvgResponseLatency() != null) {
+                updateExpression.append(", avg_response_latency = :arl");
+                expressionValues.put(":arl", AttributeValue.builder().n(String.valueOf(stats.getAvgResponseLatency())).build());
+            }
+            if (stats.getAvgNetSpeakingDensity() != null) {
+                updateExpression.append(", avg_net_speaking_density = :ansd");
+                expressionValues.put(":ansd", AttributeValue.builder().n(String.valueOf(stats.getAvgNetSpeakingDensity())).build());
+            }
+
+            // 새 필드: avg_response_quality
+            if (stats.getAvgResponseQuality() != null) {
+                updateExpression.append(", avg_response_quality = :arq");
+                expressionValues.put(":arq", AttributeValue.builder().n(String.valueOf(stats.getAvgResponseQuality())).build());
+            }
+
+            // 상세 기록 (JSON으로 저장)
+            if (stats.getPaceRatios() != null && !stats.getPaceRatios().isEmpty()) {
+                updateExpression.append(", pace_ratios = :prs");
+                expressionValues.put(":prs", AttributeValue.builder().s(objectMapper.writeValueAsString(stats.getPaceRatios())).build());
+            }
+            if (stats.getResponseLatencies() != null && !stats.getResponseLatencies().isEmpty()) {
+                updateExpression.append(", response_latencies = :rls");
+                expressionValues.put(":rls", AttributeValue.builder().s(objectMapper.writeValueAsString(stats.getResponseLatencies())).build());
+            }
+
+            // 새 필드: response_qualities (JSON으로 저장)
+            if (stats.getResponseQualities() != null && !stats.getResponseQualities().isEmpty()) {
+                updateExpression.append(", response_qualities = :rqs");
+                expressionValues.put(":rqs", AttributeValue.builder().s(objectMapper.writeValueAsString(stats.getResponseQualities())).build());
+            }
+
+            // count 필드 (리스트 생략 시에도 주간 가중평균 계산용)
+            if (stats.getPaceRatioCount() != null) {
+                updateExpression.append(", pace_ratio_count = :prc");
+                expressionValues.put(":prc", AttributeValue.builder().n(String.valueOf(stats.getPaceRatioCount())).build());
+            }
+            if (stats.getResponseLatencyCount() != null) {
+                updateExpression.append(", response_latency_count = :rlc");
+                expressionValues.put(":rlc", AttributeValue.builder().n(String.valueOf(stats.getResponseLatencyCount())).build());
+            }
+            if (stats.getResponseQualityCount() != null) {
+                updateExpression.append(", response_quality_count = :rqc");
+                expressionValues.put(":rqc", AttributeValue.builder().n(String.valueOf(stats.getResponseQualityCount())).build());
+            }
+
+            UpdateItemRequest request = UpdateItemRequest.builder()
+                .tableName(tableName)
+                .key(key)
+                .updateExpression(updateExpression.toString())
+                .expressionAttributeValues(expressionValues)
+                .build();
+
+            dynamoDbClient.updateItem(request);
+
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize statistics data", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save daily statistics", e);
+        }
     }
 
     /**
@@ -275,6 +385,34 @@ public class DailyStatisticsRepository {
             }
         }
 
+        // 새 필드: avg_response_quality
+        if (item.containsKey("avg_response_quality")) {
+            stats.setAvgResponseQuality(Double.parseDouble(item.get("avg_response_quality").n()));
+        }
+
+        // count 필드
+        if (item.containsKey("pace_ratio_count")) {
+            stats.setPaceRatioCount(Integer.parseInt(item.get("pace_ratio_count").n()));
+        }
+        if (item.containsKey("response_latency_count")) {
+            stats.setResponseLatencyCount(Integer.parseInt(item.get("response_latency_count").n()));
+        }
+        if (item.containsKey("response_quality_count")) {
+            stats.setResponseQualityCount(Integer.parseInt(item.get("response_quality_count").n()));
+        }
+
+        // 새 필드: response_qualities (JSON 리스트)
+        if (item.containsKey("response_qualities")) {
+            try {
+                String json = item.get("response_qualities").s();
+                List<ResponseQuality> qualities = objectMapper.readValue(json,
+                    new TypeReference<List<ResponseQuality>>() {});
+                stats.setResponseQualities(qualities);
+            } catch (JsonProcessingException e) {
+                stats.setResponseQualities(new ArrayList<>());
+            }
+        }
+
         return stats;
     }
 
@@ -290,8 +428,13 @@ public class DailyStatisticsRepository {
         stats.setAvgPaceRatio(0.0);
         stats.setAvgResponseLatency(0.0);
         stats.setAvgNetSpeakingDensity(0.0);
+        stats.setAvgResponseQuality(0.0);
         stats.setPaceRatios(new ArrayList<>());
         stats.setResponseLatencies(new ArrayList<>());
+        stats.setResponseQualities(new ArrayList<>());
+        stats.setPaceRatioCount(0);
+        stats.setResponseLatencyCount(0);
+        stats.setResponseQualityCount(0);
         return stats;
     }
 

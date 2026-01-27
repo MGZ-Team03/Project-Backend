@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "project02-speaktracker-hwkang"
+stack_name = "project02-speaktracker"
 region = "ap-northeast-2"
 
 [default.build.parameters]
@@ -17,7 +17,6 @@ lint = true
 capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-s3_prefix = "project02-speaktracker-hwkang"
 parameter_overrides = "SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
 image_repositories = []
 

@@ -1,12 +1,10 @@
-package websocket.dto;
+package dashboard.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.joda.time.DateTime;
 
 @Builder
+@Data
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor

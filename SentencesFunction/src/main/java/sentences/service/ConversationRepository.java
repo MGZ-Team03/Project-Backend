@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import sentences.model.ConversationMessage;
+import sentences.model.ConversationSummary;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
@@ -65,6 +66,60 @@ public class ConversationRepository {
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize messages", e);
         }
+    }
+
+    /**
+     * 학생별 대화 이력 조회 (최신순)
+     */
+    public List<ConversationSummary> getConversationsByStudent(String studentEmail, int limit) {
+        Map<String, AttributeValue> expressionValues = new HashMap<>();
+        expressionValues.put(":email", AttributeValue.builder().s(studentEmail).build());
+
+        QueryRequest queryRequest = QueryRequest.builder()
+            .tableName(tableName)
+            .keyConditionExpression("student_email = :email")
+            .expressionAttributeValues(expressionValues)
+            .scanIndexForward(false)  // 최신순 정렬 (timestamp DESC)
+            .limit(limit)
+            .build();
+
+        QueryResponse response = dynamoDbClient.query(queryRequest);
+
+        List<ConversationSummary> summaries = new ArrayList<>();
+        for (Map<String, AttributeValue> item : response.items()) {
+            summaries.add(parseConversationSummary(item));
+        }
+
+        return summaries;
+    }
+
+    private ConversationSummary parseConversationSummary(Map<String, AttributeValue> item) {
+        String conversationId = item.get("conversation_id").s();
+        String timestamp = item.get("timestamp").s();
+        String topic = item.get("topic").s();
+        String difficulty = item.get("difficulty").s();
+        Integer turnCount = item.containsKey("turn_count")
+            ? Integer.parseInt(item.get("turn_count").n())
+            : 0;
+
+        // 첫 AI 메시지에서 미리보기 추출 (50자)
+        String preview = "";
+        try {
+            String messagesJson = item.get("messages").s();
+            List<ConversationMessage> messages = objectMapper.readValue(
+                messagesJson, new TypeReference<List<ConversationMessage>>() {});
+
+            if (!messages.isEmpty()) {
+                String firstMessage = messages.get(0).getContent();
+                preview = firstMessage.length() > 50
+                    ? firstMessage.substring(0, 50) + "..."
+                    : firstMessage;
+            }
+        } catch (JsonProcessingException e) {
+            preview = "";
+        }
+
+        return new ConversationSummary(conversationId, timestamp, topic, difficulty, turnCount, preview);
     }
 
     /**

@@ -236,9 +236,14 @@ public class TutorRegisterService {
         // 6. 병렬 알림 전송
         User student = dynamoDBHelper.getUserByEmail(request.getStudentEmail());
 
-        // WebSocket 알림
+        // WebSocket 알림 - 학생에게 승인 알림
         webSocketHelper.sendRequestApprovedNotification(
                 request.getStudentEmail(), requestId, tutorEmail, tutor.getName(), now
+        );
+
+        // WebSocket 알림 - 튜터에게 학생 추가 알림 (대시보드 갱신용)
+        webSocketHelper.sendStudentAddedNotification(
+                tutorEmail, request.getStudentEmail(), student.getName(), assignedAt
         );
 
         // 알림 DB 저장 (동기적)

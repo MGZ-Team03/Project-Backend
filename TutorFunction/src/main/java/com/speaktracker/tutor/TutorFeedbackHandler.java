@@ -40,7 +40,7 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
     private static final String CONNECTIONS_TABLE = System.getenv("CONNECTIONS_TABLE");
     private static final String TUTOR_STUDENTS_TABLE = System.getenv("TUTOR_STUDENTS_TABLE");
     private static final String USERS_TABLE = System.getenv("USERS_TABLE");
-    private static final String WEBSOCKET_ENDPOINT = System.getenv("WEBSOCKET_ENDPOINT");
+    private static final String WEBSOCKET_ENDPOINT = System.getenv("WEBSOCKET_API_ENDPOINT");
     private static final String FEEDBACK_QUEUE_URL = System.getenv("FEEDBACK_QUEUE_URL");
     
     private final DynamoDbClient dynamoDbClient;
@@ -447,13 +447,23 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
                     .keyConditionExpression("student_email = :email")
                     .expressionAttributeValues(keyCondition)
                     .limit(limit)
-                    .scanIndexForward(false)  // 최신 순 정렬
+                    .scanIndexForward(true)  // 오래된 순 정렬 (최신이 맨 뒤)
                     .build();
 
             QueryResponse response = dynamoDbClient.query(request);
 
+            // AttributeValue를 일반 객체로 변환
+            List<Map<String, Object>> parsedMessages = new ArrayList<>();
+            for (Map<String, AttributeValue> item : response.items()) {
+                Map<String, Object> parsedItem = new HashMap<>();
+                for (Map.Entry<String, AttributeValue> entry : item.entrySet()) {
+                    parsedItem.put(entry.getKey(), parseAttributeValue(entry.getValue()));
+                }
+                parsedMessages.add(parsedItem);
+            }
+
             Map<String, Object> result = new HashMap<>();
-            result.put("messages", response.items());
+            result.put("messages", parsedMessages);
             result.put("count", response.count());
             
             if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
@@ -467,6 +477,30 @@ public class TutorFeedbackHandler implements RequestHandler<APIGatewayProxyReque
             context.getLogger().log("❌ Query error: " + e.getMessage());
             throw new RuntimeException("Failed to retrieve feedback history", e);
         }
+    }
+
+    /**
+     * DynamoDB AttributeValue를 일반 Java 객체로 변환
+     */
+    private Object parseAttributeValue(AttributeValue av) {
+        if (av.s() != null) return av.s();
+        if (av.n() != null) return av.n();
+        if (av.bool() != null) return av.bool();
+        if (av.hasL()) {
+            List<Object> list = new ArrayList<>();
+            for (AttributeValue item : av.l()) {
+                list.add(parseAttributeValue(item));
+            }
+            return list;
+        }
+        if (av.hasM()) {
+            Map<String, Object> map = new HashMap<>();
+            for (Map.Entry<String, AttributeValue> entry : av.m().entrySet()) {
+                map.put(entry.getKey(), parseAttributeValue(entry.getValue()));
+            }
+            return map;
+        }
+        return null;
     }
 
     /**

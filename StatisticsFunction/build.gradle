@@ -14,9 +14,10 @@ dependencies {
     // JSON 처리
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
 
-    // AWS SDK v2 (DynamoDB)
+    // AWS SDK v2 (DynamoDB, SQS)
     implementation platform('software.amazon.awssdk:bom:2.20.26')
     implementation 'software.amazon.awssdk:dynamodb'
+    implementation 'software.amazon.awssdk:sqs'
 }
 
 sourceCompatibility = 21
