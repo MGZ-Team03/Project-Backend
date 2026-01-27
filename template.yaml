@@ -1252,6 +1252,13 @@ Resources:
               Ref: MyApi
             Path: /api/statistics/today
             Method: get
+        API1Post:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /api/statistics/today
+            Method: post
         API2:
           Type: Api
           Properties:

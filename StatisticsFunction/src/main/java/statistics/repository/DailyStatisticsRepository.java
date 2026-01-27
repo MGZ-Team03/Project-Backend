@@ -74,7 +74,11 @@ public class DailyStatisticsRepository {
             Map<String, AttributeValue> expressionValues = new HashMap<>();
             expressionValues.put(":ttl", AttributeValue.builder().n(String.valueOf(ttl)).build());
 
-            StringBuilder updateExpression = new StringBuilder("SET ttl = :ttl");
+            // DynamoDB reserved keyword 회피
+            Map<String, String> expressionNames = new HashMap<>();
+            expressionNames.put("#ttl", "ttl");
+
+            StringBuilder updateExpression = new StringBuilder("SET #ttl = :ttl");
 
             // 기본 통계
             if (stats.getTotalRecordingTime() != null) {
@@ -152,6 +156,7 @@ public class DailyStatisticsRepository {
                 .tableName(tableName)
                 .key(key)
                 .updateExpression(updateExpression.toString())
+                .expressionAttributeNames(expressionNames)
                 .expressionAttributeValues(expressionValues)
                 .build();
 
