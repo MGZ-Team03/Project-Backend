@@ -1810,6 +1810,10 @@ Outputs:
     Description: "API Gateway endpoint URL for Student Status"
     Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/student-status"
 
+  WebSocketURL:
+    Description: WebSocket API URL
+    Value: !Sub "wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+
   UserPoolId:
     Description: Cognito User Pool ID
     Value: !Ref UserPool
