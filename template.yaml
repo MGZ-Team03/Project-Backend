@@ -45,7 +45,6 @@ Resources:
   UserPool:
     Type: AWS::Cognito::UserPool
     Properties:
-      UserPoolName: !Sub "${AWS::StackName}-userpool"
       AutoVerifiedAttributes:
         - email
       UsernameAttributes:
@@ -554,7 +553,6 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub '${AWS::StackName}-transcribe-temp'
       LifecycleConfiguration:
         Rules:
           - Id: DeleteOldAudioFiles
@@ -569,7 +567,6 @@ Resources:
   TTSQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AWS::StackName}-tts-queue'
       VisibilityTimeout: 120
       MessageRetentionPeriod: 3600
       RedrivePolicy:
@@ -579,14 +576,12 @@ Resources:
   TTSDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AWS::StackName}-tts-dlq'
       MessageRetentionPeriod: 1209600
 
   # AI Conversation Queue (FIFO)
   AIConversationQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AWS::StackName}-ai-conversation-queue.fifo'
       FifoQueue: true
       ContentBasedDeduplication: true
       VisibilityTimeout: 120
@@ -598,7 +593,6 @@ Resources:
   AIConversationDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AWS::StackName}-ai-conversation-dlq.fifo'
       FifoQueue: true
       MessageRetentionPeriod: 1209600
 
@@ -811,7 +805,6 @@ Resources:
   TranscribeClientRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-transcribe-client-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -1534,7 +1527,6 @@ Resources:
   FeedbackQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AWS::StackName}-tutor-feedback-queue'
       VisibilityTimeout: 300
       MessageRetentionPeriod: 1209600
       RedrivePolicy:
@@ -1544,7 +1536,6 @@ Resources:
   FeedbackDLQ:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AWS::StackName}-tutor-feedback-dlq'
       MessageRetentionPeriod: 1209600
 
   # ========================================
@@ -1553,7 +1544,6 @@ Resources:
   NotificationQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AWS::StackName}-tutor-registration-notification-queue'
       VisibilityTimeout: 300
       MessageRetentionPeriod: 1209600
       RedrivePolicy:
@@ -1563,7 +1553,6 @@ Resources:
   NotificationDLQ:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AWS::StackName}-tutor-registration-notification-dlq'
       MessageRetentionPeriod: 1209600
 
   # ========================================
