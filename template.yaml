@@ -5,6 +5,22 @@ Description: 'Project02-SpeakTracker
   Sample SAM Template for Project02-SpeakTracker
 
   '
+Parameters:
+  StageName:
+    Type: String
+    Default: Dev
+    AllowedValues:
+      - Dev
+      - Prod
+    Description: API Gateway/WebSocket stage name (Dev or Prod)
+  FrontendUrl:
+    Type: String
+    Default: https://example.com
+    Description: Frontend base URL used in notifications/links
+  SesSenderEmail:
+    Type: String
+    Default: noreply@example.com
+    Description: SES sender email address
 Globals:
   Function:
     Timeout: 30
@@ -843,7 +859,7 @@ Resources:
       Environment:
         Variables:
           FEEDBACK_QUEUE_URL: !Ref FeedbackQueue
-          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
+          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}'
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
           TUTOR_STUDENTS_TABLE: !Ref TutorStudentsTable
           USERS_TABLE: !Ref UsersTable
@@ -1453,7 +1469,7 @@ Resources:
   WebSocketStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
-      StageName: Dev
+      StageName: !Ref StageName
       ApiId: !Ref WebSocketApi
       AutoDeploy: true
 
@@ -1489,7 +1505,7 @@ Resources:
   MyApi:
     Type: AWS::Serverless::Api
     Properties:
-      StageName: Dev
+      StageName: !Ref StageName
       Cors:
         AllowOrigin: "'*'"
         AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
@@ -1649,9 +1665,9 @@ Resources:
           CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
           NOTIFICATIONS_TABLE: !Ref NotificationsTable
           NOTIFICATION_QUEUE_URL: !Ref NotificationQueue
-          SES_SENDER_EMAIL: noreply@example.com
-          FRONTEND_URL: https://example.com
-          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Dev'
+          SES_SENDER_EMAIL: !Ref SesSenderEmail
+          FRONTEND_URL: !Ref FrontendUrl
+          WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -1782,28 +1798,28 @@ Outputs:
   ApiEndpoint:
     Description: API Gateway Base URL
     Value:
-      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
   HelloWorldUrl:
     Value:
-      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/hello
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/hello
   TutorsListUrl:
     Value:
-      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/tutors
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/tutors
   SessionsUrl:
     Value:
-      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/sessions
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/sessions
   SentencesUrl:
     Value:
-      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/sentences
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/sentences
   StatisticsUrl:
     Value:
-      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/statistics
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/statistics
   AuthUrl:
     Value:
-      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/auth
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/auth
   StudentStatusApiEndpoint:
     Description: "API Gateway endpoint URL for Student Status"
-    Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/student-status"
+    Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/student-status"
 
   UserPoolId:
     Description: Cognito User Pool ID
@@ -1863,7 +1879,7 @@ Outputs:
 
   TTSUrl:
     Description: TTS API URL
-    Value: !Sub 'https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/tts'
+    Value: !Sub 'https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/tts'
 
   TTSAudioBucketName:
     Description: TTS Audio S3 Bucket Name
@@ -1909,4 +1925,4 @@ Outputs:
 
   TutorRegisterUrl:
     Description: Tutor Register API URL
-    Value: !Sub 'https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Dev/api/tutors'
+    Value: !Sub 'https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/tutors'

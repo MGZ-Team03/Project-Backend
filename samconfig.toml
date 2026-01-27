@@ -17,7 +17,29 @@ lint = true
 capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-parameter_overrides = "SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
+parameter_overrides = "StageName=Dev SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
+image_repositories = []
+
+[dev.global.parameters]
+stack_name = "project02-speaktracker-dev"
+region = "ap-northeast-2"
+
+[dev.deploy.parameters]
+capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+parameter_overrides = "StageName=Dev SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
+image_repositories = []
+
+[prod.global.parameters]
+stack_name = "project02-speaktracker-prod"
+region = "ap-northeast-2"
+
+[prod.deploy.parameters]
+capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+parameter_overrides = "StageName=Prod SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
 image_repositories = []
 
 [default.package.parameters]
