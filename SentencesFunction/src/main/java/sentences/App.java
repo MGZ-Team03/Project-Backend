@@ -10,6 +10,7 @@ import sentences.model.*;
 import sentences.service.ClaudeApiKeyProvider;
 import sentences.service.ClaudeApiService;
 import sentences.service.ConversationRepository;
+import sentences.service.UserProfileRepository;
 import sentences.service.SituationGenerator;
 import sentences.service.TopicScenariosProvider;
 import sentences.service.SQSService;
@@ -33,6 +34,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
@@ -53,6 +57,10 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
     private static final int LEVEL_EVAL_MAX_USER_MSG_PER_CONV = 10;
     private static final int LEVEL_EVAL_MAX_CHARS_PER_MSG = 300;
 
+    // Seed(start-only) 대화 TTL (초)
+    private static final long DEFAULT_SEED_TTL_SECONDS = 10L * 60; // 10분
+    private final long seedConversationTtlSeconds;
+
     // Lazy-init (cold start 최적화): Secrets Manager 호출은 첫 요청 시점에만 수행
     private volatile ClaudeApiService claudeApiService;
     private final Object claudeInitLock = new Object();
@@ -63,6 +71,11 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
 
         String conversationsTable = System.getenv("AI_CONVERSATIONS_TABLE");
         this.conversationRepository = new ConversationRepository(conversationsTable);
+
+        this.seedConversationTtlSeconds = parseLongEnv(
+            "AI_CONVERSATION_SEED_TTL_SECONDS",
+            DEFAULT_SEED_TTL_SECONDS
+        );
 
         // SQS, DynamoDB, S3(Presign) 클라이언트 초기화
         String aiQueueUrl = System.getenv("AI_CONVERSATION_QUEUE_URL");
@@ -115,6 +128,17 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
                 claudeApiService = new ClaudeApiService(apiKey);
             }
             return claudeApiService;
+        }
+    }
+
+    private long parseLongEnv(String key, long defaultValue) {
+        try {
+            String raw = System.getenv(key);
+            if (raw == null || raw.isBlank()) return defaultValue;
+            long v = Long.parseLong(raw.trim());
+            return v > 0 ? v : defaultValue;
+        } catch (Exception ignore) {
+            return defaultValue;
         }
     }
 
@@ -281,21 +305,10 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
                 conversation = conversationRepository.getConversation(conversationId);
 
                 if (conversation != null && studentEmail.equals(conversation.getStudentEmail())) {
-                    List<ConversationMessage> messages = new ArrayList<>(conversation.getMessages());
-
-                    // 추천 요청으로 턴 2개 차감 (user + assistant 역할의 더미 메시지)
-                    messages.add(new ConversationMessage("user", "[추천 문장 요청]"));
-                    messages.add(new ConversationMessage("assistant", "[추천 문장 제공]"));
-
-                    conversationRepository.saveConversation(
-                        conversation.getStudentEmail(), conversationId,
-                        conversation.getTopic(), conversation.getDifficulty(),
-                        conversation.getSituation(), conversation.getRole(),
-                        messages, conversation.getTimestamp());
-
-                    remainingTurns = 15 - messages.size();
-                    context.getLogger().log("Turn deducted for recommend. Current turn count: "
-                        + messages.size() + ", remaining: " + remainingTurns);
+                    int currentTurnCount = conversation.getMessages() == null ? 0 : conversation.getMessages().size();
+                    remainingTurns = 15 - currentTurnCount;
+                    context.getLogger().log("Recommend requested. Current turn count: "
+                        + currentTurnCount + ", remaining: " + remainingTurns);
                 }
             }
 
@@ -495,9 +508,12 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             List<ConversationMessage> messages = new ArrayList<>();
             messages.add(new ConversationMessage("assistant", aiResponse));
 
+            long ttlEpochSeconds = Instant.now().plusSeconds(seedConversationTtlSeconds).getEpochSecond();
             conversationRepository.saveConversation(
                 studentEmail, conversationId, topic, difficulty,
-                situation.getSituation(), situation.getRole(), messages);
+                situation.getSituation(), situation.getRole(), messages,
+                ttlEpochSeconds
+            );
 
             // 응답 생성
             ChatStartResponse response = ChatStartResponse.success(
@@ -560,11 +576,14 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
                 messages.add(new ConversationMessage("assistant", wrapUp));
 
                 // 랩업 메시지까지 저장해서 대화 종료 상태를 남김
+                long longTtlEpochSeconds = Instant.now()
+                    .plusSeconds(ConversationRepository.LONG_TTL_SECONDS)
+                    .getEpochSecond();
                 conversationRepository.saveConversation(
                     conversation.getStudentEmail(), conversationId,
                     conversation.getTopic(), conversation.getDifficulty(),
                     conversation.getSituation(), conversation.getRole(),
-                    messages, conversation.getTimestamp()
+                    messages, conversation.getTimestamp(), longTtlEpochSeconds
                 );
 
                 return createResponse(200, ChatMessageResponse.ended(conversationId, wrapUp, messages.size(), "TURN_LIMIT"));
@@ -575,11 +594,15 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             messages.add(new ConversationMessage("user", userMessage));
 
             // 먼저 사용자 메시지만 저장
+            long longTtlEpochSeconds = Instant.now()
+                .plusSeconds(ConversationRepository.LONG_TTL_SECONDS)
+                .getEpochSecond();
             conversationRepository.saveConversation(
                 conversation.getStudentEmail(), conversationId,
                 conversation.getTopic(), conversation.getDifficulty(),
                 conversation.getSituation(), conversation.getRole(), messages,
-                conversation.getTimestamp());
+                conversation.getTimestamp(),
+                longTtlEpochSeconds);
 
             // SQS 비동기 처리
             if (sqsService != null && jobStatusService != null) {
@@ -632,7 +655,8 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
                     conversation.getStudentEmail(), conversationId,
                     conversation.getTopic(), conversation.getDifficulty(),
                     conversation.getSituation(), conversation.getRole(), messages,
-                    conversation.getTimestamp());
+                    conversation.getTimestamp(),
+                    longTtlEpochSeconds);
 
                 ChatMessageResponse response = ChatMessageResponse.success(
                     conversationId, aiResponse, messages.size());
@@ -799,6 +823,28 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         try {
             String studentEmail = extractStudentEmailFromAuthorizerClaims(input);
 
+            // UsersTable에서 role 조회 및 하루 제한 체크
+            String usersTable = System.getenv("USERS_TABLE");
+            UserProfileRepository userProfileRepository = new UserProfileRepository(usersTable);
+            String role = userProfileRepository.findRoleByEmail(studentEmail).orElse(null);
+            if (role == null || role.isBlank()) {
+                return createResponse(400, Map.of("success", false, "error", "not_found"));
+            }
+
+            // 오늘 날짜 (KST 기준)
+            String todayKst = LocalDate.now(ZoneId.of("Asia/Seoul"))
+                .format(DateTimeFormatter.ISO_LOCAL_DATE);
+
+            // 하루 한 번 제한 체크
+            String lastEvalDate = userProfileRepository.getLastLevelEvalDate(role, studentEmail).orElse(null);
+            if (todayKst.equals(lastEvalDate)) {
+                return createResponse(400, Map.of(
+                    "success", false,
+                    "error", "already_evaluated_today",
+                    "message", "오늘은 이미 레벨 평가를 완료했습니다."
+                ));
+            }
+
             // 최근 10개 conversation(messages 포함) 조회
             List<ConversationRepository.ConversationData> conversations =
                 conversationRepository.getRecentConversationsWithMessages(studentEmail, LEVEL_EVAL_CONVERSATION_LIMIT);
@@ -815,7 +861,7 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
             String systemPrompt = """
                 너는 영어 학습자의 회화 레벨을 평가하는 채점자다.
                 아래는 사용자의 최근 대화 발화(user role)들이다.
-                
+
                 규칙:
                 - 반드시 다음 3개 중 하나만 출력: 상, 중, 하
                 - 다른 글자/설명/공백/줄바꿈/마침표/따옴표/JSON 금지
@@ -823,6 +869,9 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
 
             String claudeRaw = getClaudeApiService().callClaudeApi(systemPrompt, userPrompt);
             String level = parseLevelOnly(claudeRaw);
+
+            // UsersTable learning_level 및 last_level_eval_date 업데이트
+            userProfileRepository.updateLearningLevel(role, studentEmail, level, todayKst);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

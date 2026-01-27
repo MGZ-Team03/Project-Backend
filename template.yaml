@@ -982,6 +982,7 @@ Resources:
           CLAUDE_API_KEY_SECRET_ID: team3/claude_api_key
           AI_CONVERSATION_QUEUE_URL: !Ref AIConversationQueue
           JOB_STATUS_TABLE: !Ref AsyncJobStatusTable
+          USERS_TABLE: !Ref UsersTable
           TTS_QUEUE_URL: !Ref TTSQueue
           TTS_BUCKET: !Ref TTSBucket
           SENTENCE_AUDIO_TABLE: !Ref SentenceAudioTable
@@ -1784,28 +1785,6 @@ Resources:
       Dimensions:
         - Name: QueueName
           Value: !GetAtt FeedbackDLQ.QueueName
-
-
-  DashboardFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: DashboardFunction
-      Handler: dashboard.DashboardHandler::handleRequest
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref TutorStudentsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref UsersTable
-        - DynamoDBReadPolicy:
-            TableName: !Ref LearningSessionsTable
-      Events:
-        API1:
-          Type: Api
-          Properties:
-            RestApiId: !Ref MyApi
-            Path: /api/dashboard
-            Method: GET
-
 Outputs:
   ApiEndpoint:
     Description: API Gateway Base URL
