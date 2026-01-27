@@ -13,6 +13,8 @@ import java.util.*;
 
 public class ConversationRepository {
 
+    public static final long LONG_TTL_SECONDS = 30L * 24 * 60 * 60; // 30일
+
     private final DynamoDbClient dynamoDbClient;
     private final String tableName;
     private final ObjectMapper objectMapper;
@@ -35,14 +37,37 @@ public class ConversationRepository {
     }
 
     /**
+     * 대화 저장 (새 대화) - TTL(epoch seconds) 지정
+     */
+    public String saveConversation(String studentEmail, String conversationId, String topic,
+                                   String difficulty, String situation, String role,
+                                   List<ConversationMessage> messages, long ttlEpochSeconds) {
+        String timestamp = Instant.now().toString();
+        saveConversation(studentEmail, conversationId, topic, difficulty, situation, role, messages, timestamp, ttlEpochSeconds);
+        return timestamp;
+    }
+
+    /**
      * 대화 저장 (새 대화 또는 업데이트)
      */
     public void saveConversation(String studentEmail, String conversationId, String topic,
                                  String difficulty, String situation, String role,
                                  List<ConversationMessage> messages, String timestamp) {
+        long ttlEpochSeconds = Instant.now().plusSeconds(LONG_TTL_SECONDS).getEpochSecond(); // 30일 후
+        saveConversation(studentEmail, conversationId, topic, difficulty, situation, role, messages, timestamp, ttlEpochSeconds);
+    }
+
+    /**
+     * 대화 저장 (새 대화 또는 업데이트) - TTL(epoch seconds) 지정
+     */
+    public void saveConversation(String studentEmail, String conversationId, String topic,
+                                 String difficulty, String situation, String role,
+                                 List<ConversationMessage> messages, String timestamp, long ttlEpochSeconds) {
         try {
             String messagesJson = objectMapper.writeValueAsString(messages);
-            long ttl = Instant.now().plusSeconds(30 * 24 * 60 * 60).getEpochSecond(); // 30일 후
+            long ttl = ttlEpochSeconds > 0
+                ? ttlEpochSeconds
+                : Instant.now().plusSeconds(LONG_TTL_SECONDS).getEpochSecond();
 
             Map<String, AttributeValue> item = new HashMap<>();
             item.put("student_email", AttributeValue.builder().s(studentEmail).build());
@@ -87,6 +112,9 @@ public class ConversationRepository {
 
         List<ConversationSummary> summaries = new ArrayList<>();
         for (Map<String, AttributeValue> item : response.items()) {
+            if (isExpired(item)) {
+                continue;
+            }
             summaries.add(parseConversationSummary(item));
         }
 
@@ -114,6 +142,9 @@ public class ConversationRepository {
 
         List<ConversationData> conversations = new ArrayList<>();
         for (Map<String, AttributeValue> item : response.items()) {
+            if (isExpired(item)) {
+                continue;
+            }
             conversations.add(parseConversationData(item));
         }
         return conversations;
@@ -170,7 +201,27 @@ public class ConversationRepository {
         }
 
         Map<String, AttributeValue> item = response.items().get(0);
+        if (isExpired(item)) {
+            return null;
+        }
         return parseConversationData(item);
+    }
+
+    private boolean isExpired(Map<String, AttributeValue> item) {
+        try {
+            if (item == null || !item.containsKey("ttl")) {
+                return false;
+            }
+            String ttlRaw = item.get("ttl").n();
+            if (ttlRaw == null || ttlRaw.isBlank()) {
+                return false;
+            }
+            long ttlEpochSeconds = Long.parseLong(ttlRaw);
+            long now = Instant.now().getEpochSecond();
+            return ttlEpochSeconds <= now;
+        } catch (Exception ignore) {
+            return false;
+        }
     }
 
     private ConversationData parseConversationData(Map<String, AttributeValue> item) {

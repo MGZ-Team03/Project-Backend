@@ -15,6 +15,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.Instant;
 
 public class ClaudeWorker implements RequestHandler<SQSEvent, Void> {
 
@@ -23,6 +24,7 @@ public class ClaudeWorker implements RequestHandler<SQSEvent, Void> {
     private final String claudeApiKeySecretId;
     private final ConversationRepository conversationRepository;
     private final JobStatusService jobStatusService;
+    private final long seedConversationTtlSeconds;
 
     // Lazy-init
     private volatile ClaudeApiService claudeApiService;
@@ -34,6 +36,8 @@ public class ClaudeWorker implements RequestHandler<SQSEvent, Void> {
 
         String conversationsTable = System.getenv("AI_CONVERSATIONS_TABLE");
         this.conversationRepository = new ConversationRepository(conversationsTable);
+
+        this.seedConversationTtlSeconds = parseLongEnv("AI_CONVERSATION_SEED_TTL_SECONDS", 10L * 60);
 
         String jobStatusTable = System.getenv("JOB_STATUS_TABLE");
         DynamoDbClient dynamoDbClient = DynamoDbClient.builder()
@@ -92,11 +96,12 @@ public class ClaudeWorker implements RequestHandler<SQSEvent, Void> {
                     List<ConversationMessage> updatedMessages = new ArrayList<>(conversation.getMessages());
                     updatedMessages.add(new ConversationMessage("assistant", aiResponse));
 
+                    long ttlEpochSeconds = computeTtlEpochSeconds(updatedMessages);
                     conversationRepository.saveConversation(
                         studentEmail, conversationId,
                         conversation.getTopic(), conversation.getDifficulty(),
                         conversation.getSituation(), conversation.getRole(),
-                        updatedMessages, conversation.getTimestamp());
+                        updatedMessages, conversation.getTimestamp(), ttlEpochSeconds);
 
                     // 작업 상태 업데이트 (COMPLETED)
                     jobStatusService.updateJobCompleted(
@@ -126,5 +131,38 @@ public class ClaudeWorker implements RequestHandler<SQSEvent, Void> {
         }
 
         return null;
+    }
+
+    private long parseLongEnv(String key, long defaultValue) {
+        try {
+            String raw = System.getenv(key);
+            if (raw == null || raw.isBlank()) return defaultValue;
+            long v = Long.parseLong(raw.trim());
+            return v > 0 ? v : defaultValue;
+        } catch (Exception ignore) {
+            return defaultValue;
+        }
+    }
+
+    private long computeTtlEpochSeconds(List<ConversationMessage> messages) {
+        // 실제 user 메시지가 한 번이라도 있으면 long TTL, 아니면 short TTL
+        boolean hasUserMessage = false;
+        if (messages != null) {
+            for (ConversationMessage m : messages) {
+                if (m == null) continue;
+                String role = m.getRole();
+                if (role != null && role.equalsIgnoreCase("user")) {
+                    String content = m.getContent();
+                    if (content != null && !content.trim().isEmpty()) {
+                        hasUserMessage = true;
+                        break;
+                    }
+                }
+            }
+        }
+        long seconds = hasUserMessage
+            ? ConversationRepository.LONG_TTL_SECONDS
+            : seedConversationTtlSeconds; // seed TTL 기본값(Worker는 보통 seed에 안 닿지만 안전망)
+        return Instant.now().plusSeconds(seconds).getEpochSecond();
     }
 }
