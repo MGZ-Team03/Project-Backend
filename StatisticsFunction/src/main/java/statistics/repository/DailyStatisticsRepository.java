@@ -10,6 +10,7 @@ import software.amazon.awssdk.services.dynamodb.model.*;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
@@ -29,7 +30,7 @@ public class DailyStatisticsRepository {
      * 오늘 통계 조회
      */
     public DailyStatistics getToday(String studentEmail) {
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String today = LocalDate.now(ZoneId.of("Asia/Seoul")).format(DateTimeFormatter.ISO_LOCAL_DATE);
         return getByDate(studentEmail, today);
     }
 
@@ -167,7 +168,7 @@ public class DailyStatisticsRepository {
      * 주간 통계 조회 (최근 7일)
      */
     public List<DailyStatistics> getWeekly(String studentEmail) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
         List<DailyStatistics> weeklyStats = new ArrayList<>();
 
         for (int i = 6; i >= 0; i--) {
