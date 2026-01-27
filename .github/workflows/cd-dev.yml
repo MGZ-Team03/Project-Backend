@@ -41,7 +41,7 @@ jobs:
             --stack-name Project02-SpeakTracker \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --capabilities CAPABILITY_IAM \
+            --capabilities  CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --region ap-northeast-2
 
       # WebSocket 확인
