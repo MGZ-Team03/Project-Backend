@@ -18,11 +18,24 @@ subprojects {
         implementation 'software.amazon.awssdk:dynamodb'
         implementation 'software.amazon.awssdk:s3'
         implementation 'software.amazon.awssdk:ses'
+        implementation 'software.amazon.awssdk:polly'
+        implementation 'software.amazon.awssdk:secretsmanager'
 
         // WebSocket 지원을 위한 AWS SDK
         implementation 'software.amazon.awssdk:apigatewaymanagementapi:2.20.0'
 
         implementation 'com.amazonaws:aws-lambda-java-core:1.2.3'
         implementation 'com.amazonaws:aws-lambda-java-events:3.11.0'
+
+        // WebSocket 지원
+        implementation 'software.amazon.awssdk:apigatewaymanagementapi:2.20.0'
+
+        //  Lombok
+        compileOnly 'org.projectlombok:lombok:1.18.30'
+        annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+        testCompileOnly 'org.projectlombok:lombok:1.18.30'
+        testAnnotationProcessor 'org.projectlombok:lombok:1.18.30'
     }
+
 }

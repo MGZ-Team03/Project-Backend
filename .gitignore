@@ -4,7 +4,11 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+
+# AWS SAM Specific
 .aws-sam/
+.cursor
+
 ### STS ###
 .apt_generated
 .classpath
@@ -35,3 +39,8 @@ out/
 
 ### VS Code ###
 .vscode/
+.claude/
+
+### DS_Store ###
+*/.DS_Store
+.DS_Store

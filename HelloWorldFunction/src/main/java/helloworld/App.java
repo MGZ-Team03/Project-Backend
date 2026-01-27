@@ -25,15 +25,14 @@ public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatew
         Map<String, String> responseBody = new HashMap<>();
         headers.put("Content-Type", "application/json");
 
-        responseBody.put("users", System.getenv("USERS_TABLE"));
-        responseBody.put("sessions", System.getenv("SESSIONS_TABLE"));
-        responseBody.put("sentences", System.getenv("SENTENCES_TABLE"));
+        responseBody.put("message", System.getenv("USER"));
 
         APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent()
                 .withHeaders(headers);
         try {
 
-            responseBody.put("message", "Hello World");
+            responseBody.put("message", "Hello World cd 테스트 main");
+            responseBody.put("cd!!", "cd test 20260127 !!");
 
             return response
                     .withStatusCode(200)

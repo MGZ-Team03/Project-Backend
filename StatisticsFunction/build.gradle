@@ -10,6 +10,14 @@ dependencies {
     implementation 'com.amazonaws:aws-lambda-java-core:1.2.2'
     implementation 'com.amazonaws:aws-lambda-java-events:3.11.0'
     testImplementation 'junit:junit:4.13.2'
+
+    // JSON 처리
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+
+    // AWS SDK v2 (DynamoDB, SQS)
+    implementation platform('software.amazon.awssdk:bom:2.20.26')
+    implementation 'software.amazon.awssdk:dynamodb'
+    implementation 'software.amazon.awssdk:sqs'
 }
 
 sourceCompatibility = 21

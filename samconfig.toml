@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "Project02-SpeakTracker"
+stack_name = "project02-speaktracker"
 region = "ap-northeast-2"
 
 [default.build.parameters]
@@ -14,10 +14,32 @@ parallel = true
 lint = true
 
 [default.deploy.parameters]
-capabilities = "CAPABILITY_IAM"
+capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-s3_prefix = "Project02-SpeakTracker"
+parameter_overrides = "StageName=Dev SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
+image_repositories = []
+
+[dev.global.parameters]
+stack_name = "project02-speaktracker-dev"
+region = "ap-northeast-2"
+
+[dev.deploy.parameters]
+capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+parameter_overrides = "StageName=Dev SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
+image_repositories = []
+
+[prod.global.parameters]
+stack_name = "project02-speaktracker-prod"
+region = "ap-northeast-2"
+
+[prod.deploy.parameters]
+capabilities = "CAPABILITY_NAMED_IAM CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+parameter_overrides = "StageName=Prod SesSenderEmail=speaktracker.noreply@gmail.com FrontendUrl=https://app.speaktracker.com"
 image_repositories = []
 
 [default.package.parameters]
