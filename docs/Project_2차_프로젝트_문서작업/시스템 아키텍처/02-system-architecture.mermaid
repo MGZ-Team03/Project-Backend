@@ -1,0 +1,124 @@
+---
+title: SpeakTracker System Architecture (AWS Serverless)
+---
+flowchart TB
+    subgraph Client["🖥️ Client Layer"]
+        Browser["React SPA<br/>(Browser)"]
+        Mobile["Mobile App"]
+    end
+
+    subgraph CDN["🌐 CDN Layer"]
+        CloudFront["Amazon CloudFront<br/>- HTTPS<br/>- 캐싱<br/>- SPA 라우팅"]
+    end
+
+    subgraph Storage_Static["📦 Static Storage"]
+        S3_Frontend["Amazon S3<br/>(Frontend)<br/>- React Build<br/>- 정적 에셋"]
+    end
+
+    subgraph API_Layer["🔌 API Layer"]
+        APIGW_REST["API Gateway<br/>(REST API)<br/>- Cognito Authorizer<br/>- Throttling"]
+        APIGW_WS["API Gateway<br/>(WebSocket)<br/>- $connect<br/>- $disconnect<br/>- $default"]
+    end
+
+    subgraph Compute["⚡ Compute Layer (Lambda)"]
+        Lambda_Auth["Auth Handler<br/>- 회원가입<br/>- 로그인<br/>- 프로필"]
+        Lambda_Tutor["Tutor Handler<br/>- 학생 목록<br/>- 피드백 전송"]
+        Lambda_Student["Student Handler<br/>- 튜터 매칭<br/>- 학습 세션"]
+        Lambda_AI["AI Handler<br/>- 문장 생성<br/>- AI 대화"]
+        Lambda_TTS["TTS Handler<br/>- Polly 호출<br/>- 오디오 저장"]
+        Lambda_WS["WebSocket Handler<br/>- 연결 관리<br/>- 메시지 브로드캐스트"]
+    end
+
+    subgraph Queue["📬 Message Queue"]
+        SQS_TTS["Amazon SQS<br/>(TTS Queue)"]
+        SQS_AI["Amazon SQS<br/>(AI Chat Queue)"]
+        DLQ["Dead Letter Queue<br/>(실패 메시지)"]
+    end
+
+    subgraph Database["🗄️ Database Layer"]
+        DynamoDB["Amazon DynamoDB<br/>- Users<br/>- TutorStudents<br/>- LearningSessions<br/>- 기타 9개 테이블"]
+    end
+
+    subgraph Storage_User["📁 User Content Storage"]
+        S3_User["Amazon S3<br/>(User Content)<br/>- 프로필 이미지<br/>- 오디오 파일<br/>- TTS 결과"]
+    end
+
+    subgraph External["🌍 External Services"]
+        Cognito["Amazon Cognito<br/>- User Pool<br/>- JWT Token"]
+        Polly["Amazon Polly<br/>- TTS (영어/한국어)"]
+        Transcribe["Amazon Transcribe<br/>- STT (백업)"]
+        SES["Amazon SES<br/>- 이메일 발송"]
+        Claude["Claude AI API<br/>- 대화 생성<br/>- 문장 생성"]
+    end
+
+    subgraph Monitoring["📊 Monitoring"]
+        CloudWatch["CloudWatch<br/>- Logs<br/>- Metrics<br/>- Alarms"]
+        XRay["X-Ray<br/>- Tracing"]
+    end
+
+    %% Client Connections
+    Browser --> CloudFront
+    Mobile --> CloudFront
+    Browser -->|"REST API"| APIGW_REST
+    Browser -->|"WebSocket"| APIGW_WS
+    Mobile -->|"REST API"| APIGW_REST
+
+    %% CDN to Storage
+    CloudFront --> S3_Frontend
+
+    %% API Gateway to Lambda
+    APIGW_REST -->|"Invoke"| Lambda_Auth
+    APIGW_REST -->|"Invoke"| Lambda_Tutor
+    APIGW_REST -->|"Invoke"| Lambda_Student
+    APIGW_REST -->|"Invoke"| Lambda_AI
+    APIGW_REST -->|"Invoke"| Lambda_TTS
+    APIGW_WS -->|"Invoke"| Lambda_WS
+
+    %% Lambda to Database
+    Lambda_Auth --> DynamoDB
+    Lambda_Tutor --> DynamoDB
+    Lambda_Student --> DynamoDB
+    Lambda_AI --> DynamoDB
+    Lambda_TTS --> DynamoDB
+    Lambda_WS --> DynamoDB
+
+    %% Lambda to External Services
+    Lambda_Auth --> Cognito
+    Lambda_Auth --> SES
+    Lambda_TTS --> Polly
+    Lambda_TTS --> S3_User
+    Lambda_AI --> Claude
+
+    %% SQS Flow
+    Lambda_TTS -->|"Send"| SQS_TTS
+    Lambda_AI -->|"Send"| SQS_AI
+    SQS_TTS -->|"Trigger"| Lambda_TTS
+    SQS_AI -->|"Trigger"| Lambda_AI
+    SQS_TTS -->|"3회 실패"| DLQ
+    SQS_AI -->|"3회 실패"| DLQ
+
+    %% WebSocket Broadcast
+    Lambda_WS -->|"Push"| APIGW_WS
+
+    %% Monitoring
+    Lambda_Auth -.-> CloudWatch
+    Lambda_Tutor -.-> CloudWatch
+    Lambda_Student -.-> CloudWatch
+    Lambda_AI -.-> CloudWatch
+    Lambda_TTS -.-> CloudWatch
+    DLQ -.->|"Alarm"| CloudWatch
+
+    %% Styling
+    classDef client fill:#e1f5fe,stroke:#01579b
+    classDef aws fill:#ff9800,stroke:#e65100,color:#fff
+    classDef lambda fill:#ff9800,stroke:#e65100
+    classDef database fill:#4caf50,stroke:#2e7d32,color:#fff
+    classDef external fill:#9c27b0,stroke:#6a1b9a,color:#fff
+    classDef queue fill:#2196f3,stroke:#1565c0,color:#fff
+
+    class Browser,Mobile client
+    class CloudFront,APIGW_REST,APIGW_WS,S3_Frontend,S3_User aws
+    class Lambda_Auth,Lambda_Tutor,Lambda_Student,Lambda_AI,Lambda_TTS,Lambda_WS lambda
+    class DynamoDB database
+    class Cognito,Polly,Transcribe,SES,Claude external
+    class SQS_TTS,SQS_AI,DLQ queue

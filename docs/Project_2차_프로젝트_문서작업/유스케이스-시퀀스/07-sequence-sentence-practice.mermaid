@@ -1,0 +1,109 @@
+---
+title: SpeakTracker - 문장 연습 시퀀스 (TTS + STT + 발음 평가)
+---
+sequenceDiagram
+    autonumber
+    participant U as 👤 Student
+    participant FE as 🖥️ React App
+    participant Whisper as 🎤 Whisper Worker
+    participant API as 🔌 API Gateway
+    participant Lambda as ⚡ Lambda
+    participant SQS as 📬 SQS
+    participant Claude as 🤖 Claude AI
+    participant Polly as 🔊 Polly
+    participant S3 as 📦 S3
+    participant DB as 🗄️ DynamoDB
+
+    rect rgb(230, 245, 255)
+        Note over U,DB: 1️⃣ 세션 시작 및 문장 생성
+        U->>FE: 연습 시작 (난이도: 중, 주제: 일상대화)
+        FE->>API: POST /api/sessions/start
+        API->>Lambda: Invoke SessionHandler
+        Lambda->>DB: Put LearningSessions
+        Lambda-->>FE: {sessionId}
+        
+        FE->>API: POST /api/sentences/generate
+        API->>Lambda: Invoke SentenceHandler
+        Lambda->>Claude: Generate sentences (난이도, 주제)
+        Claude-->>Lambda: 5개 문장 (영어 + 한글)
+        Lambda-->>FE: {sentences, sessionId}
+        FE-->>U: 첫 번째 문장 표시
+    end
+
+    rect rgb(255, 245, 230)
+        Note over U,DB: 2️⃣ TTS 오디오 생성 (비동기)
+        FE->>API: POST /api/tts
+        API->>Lambda: Invoke TTSHandler
+        Lambda->>DB: Check cache (동일 문장)
+        
+        alt 캐시 히트
+            DB-->>Lambda: audioUrl exists
+            Lambda-->>FE: 200 {audioUrl}
+        else 캐시 미스
+            Lambda->>SQS: Send TTS job
+            Lambda-->>FE: 202 {jobId, status: PROCESSING}
+            
+            loop 폴링 (1초 → 3초 백오프)
+                FE->>API: GET /api/tts/status/{jobId}
+                API->>Lambda: Check status
+                Lambda->>DB: Query AsyncJobStatus
+                
+                alt 처리 중
+                    DB-->>Lambda: PROCESSING
+                    Lambda-->>FE: {status: PROCESSING}
+                else 완료
+                    SQS->>Lambda: Process TTS job
+                    Lambda->>Polly: synthesizeSpeech(text)
+                    Polly-->>Lambda: Audio stream
+                    Lambda->>S3: Upload audio
+                    Lambda->>DB: Update AsyncJobStatus (COMPLETED)
+                    Lambda->>DB: Cache audioUrl
+                    DB-->>Lambda: COMPLETED
+                    Lambda-->>FE: {status: COMPLETED, audioUrl}
+                end
+            end
+        end
+        
+        FE->>FE: Load audio from CloudFront
+        FE-->>U: 🔊 "How are you doing today?"
+    end
+
+    rect rgb(230, 255, 230)
+        Note over U,DB: 3️⃣ 학생 녹음 및 STT 변환
+        U->>FE: 🎙️ 녹음 시작 버튼
+        FE->>FE: MediaRecorder 시작
+        U->>FE: 🛑 녹음 종료 버튼
+        FE->>FE: WebM/Opus 오디오 캡처
+        
+        Note over FE,Whisper: 로컬 STT 처리 (Whisper)
+        FE->>FE: AudioContext 디코딩<br/>(16kHz 리샘플링, 노이즈 제거)
+        FE->>Whisper: 오디오 전송
+        Whisper->>Whisper: STT 변환 중...
+        Whisper-->>FE: "How are you doing today"
+    end
+
+    rect rgb(255, 230, 255)
+        Note over U,DB: 4️⃣ 발음 평가
+        FE->>API: POST /api/stt/evaluate
+        Note right of FE: audioFile + originalText
+        API->>Lambda: Invoke STTHandler
+        Lambda->>Lambda: 텍스트 비교 알고리즘
+        Note right of Lambda: - Word accuracy<br/>- Completeness score<br/>- Missed/Extra words
+        Lambda->>DB: Put PronunciationResults
+        Lambda-->>FE: {overallScore: 88.5, grade: "B", feedback: "..."}
+        
+        FE-->>U: 📊 결과 표시
+        Note right of U: ✅ Overall: 88.5점 (B)<br/>✅ 정확도: 92.3%<br/>⚠️ 누락: "are" 발음 불명확
+    end
+
+    rect rgb(255, 255, 230)
+        Note over U,DB: 5️⃣ 세션 종료 및 통계 저장
+        U->>FE: 연습 종료 버튼
+        FE->>API: POST /api/sessions/end
+        API->>Lambda: Invoke SessionHandler
+        Lambda->>DB: Update LearningSessions<br/>(duration, speakingDuration)
+        Lambda->>DB: Update DailyStatistics<br/>(집계)
+        Lambda-->>FE: {sessionId, duration: 1800}
+        FE->>FE: localStorage 캐싱
+        FE-->>U: "오늘 30분 연습 완료!" 🎉
+    end

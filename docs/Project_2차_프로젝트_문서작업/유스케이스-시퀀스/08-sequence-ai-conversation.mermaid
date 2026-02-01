@@ -1,0 +1,110 @@
+---
+title: SpeakTracker - AI 대화 시퀀스
+---
+sequenceDiagram
+    autonumber
+    participant U as 👤 Student
+    participant FE as 🖥️ React App
+    participant Whisper as 🎤 Whisper Worker
+    participant API as 🔌 API Gateway
+    participant Lambda as ⚡ Lambda
+    participant SQS as 📬 SQS
+    participant Claude as 🤖 Claude AI
+    participant Polly as 🔊 Polly
+    participant S3 as 📦 S3
+    participant DB as 🗄️ DynamoDB
+    participant WS as 🔗 WebSocket
+
+    rect rgb(230, 245, 255)
+        Note over U,WS: 1️⃣ AI 대화 세션 시작
+        U->>FE: 대화 시작 (난이도: 중, 주제: 레스토랑)
+        FE->>WS: room: "ai-conversation"
+        WS->>Lambda: Update student status
+        Lambda->>DB: Update TutorStudents (room)
+        
+        FE->>API: POST /api/ai/conversation/start
+        API->>Lambda: Invoke AIHandler
+        Lambda->>Claude: 상황 설정 프롬프트<br/>"You are a waiter at a restaurant..."
+        Claude-->>Lambda: 첫 AI 메시지<br/>"Welcome! Table for how many?"
+        Lambda->>SQS: TTS job (AI 메시지)
+        Lambda->>DB: Put AIConversations
+        Lambda-->>FE: {conversationId, aiMessage, audioUrl}
+        
+        FE->>FE: TTS 오디오 재생
+        FE-->>U: 🤖 "Welcome! Table for how many?"
+    end
+
+    rect rgb(255, 245, 230)
+        Note over U,WS: 2️⃣ 학생 응답 (Turn 1)
+        U->>FE: 🎙️ 녹음 시작
+        FE->>FE: MediaRecorder 시작
+        U->>U: "Table for two, please"
+        U->>FE: 🛑 녹음 종료
+        
+        FE->>Whisper: 오디오 전송
+        Whisper-->>FE: "Table for two please"
+        
+        FE-->>U: 💬 "Table for two please" (내 메시지)
+        
+        FE->>API: POST /api/ai/conversation/message
+        Note right of FE: conversationId + userMessage
+        API->>Lambda: Invoke AIHandler
+        Lambda->>Lambda: 메트릭 계산
+        Note right of Lambda: - 응답 지연시간<br/>- 발화 밀도<br/>- 페이스 비율
+        Lambda->>Claude: 대화 컨텍스트 + 사용자 메시지
+        Claude-->>Lambda: AI 응답<br/>"Right this way. Would you like a booth or a regular table?"
+        Lambda->>SQS: TTS job
+        Lambda->>DB: Update AIConversations (turnCount: 1)
+        Lambda-->>FE: {aiMessage, turnCount: 1, metrics}
+        
+        FE->>FE: TTS 오디오 재생
+        FE-->>U: 🤖 "Right this way..."
+    end
+
+    rect rgb(230, 255, 230)
+        Note over U,WS: 3️⃣ 대화 진행 (Turn 2~9)
+        loop Turn 2 ~ 9
+            U->>FE: 🎙️ 음성 입력
+            FE->>Whisper: STT 변환
+            Whisper-->>FE: transcribed text
+            FE->>API: POST /api/ai/conversation/message
+            Lambda->>Claude: 대화 컨텍스트 유지
+            Claude-->>Lambda: AI 응답
+            Lambda->>DB: Update turnCount
+            Lambda-->>FE: {aiMessage, turnCount: N}
+            FE-->>U: 🤖 AI 응답 재생
+        end
+    end
+
+    rect rgb(255, 230, 255)
+        Note over U,WS: 4️⃣ 대화 종료 (Turn 10 또는 수동)
+        alt 10턴 도달
+            Lambda-->>FE: {isEnded: true, turnCount: 10}
+        else 학생이 종료
+            U->>FE: "END SESSION" 버튼
+            FE->>API: POST /api/ai/conversation/end
+        end
+        
+        Lambda->>DB: Update AIConversations (완료)
+        Lambda->>DB: Update LearningSessions
+        Lambda->>DB: Update DailyStatistics
+        Note right of DB: - chat_turns_count += 10<br/>- avg_response_quality 업데이트<br/>- total_speaking_time 업데이트
+        
+        Lambda-->>FE: 세션 요약
+        Note right of FE: {totalTurns: 10,<br/> avgResponseQuality: 85%,<br/> totalSpeakingTime: 180s}
+        
+        FE->>WS: room: null (대화 종료)
+        WS->>Lambda: Update student status
+        Lambda->>DB: Update TutorStudents (room: null)
+        
+        FE-->>U: 📊 대화 결과 요약
+        Note right of U: ✅ 10턴 완료<br/>✅ 응답 품질: 85%<br/>✅ 총 발화 시간: 3분
+    end
+
+    rect rgb(255, 255, 230)
+        Note over U,WS: 5️⃣ 튜터 실시간 모니터링 (병렬)
+        Note over WS: 학생 상태가 변경될 때마다
+        WS-->>FE: STUDENT_STATUS_UPDATE
+        Note right of FE: (튜터 대시보드에 전달)
+        Note right of FE: 학생1: 🟢 AI 대화 중<br/>학생2: 🟡 문장 연습 중<br/>학생3: ⚫ 오프라인
+    end

@@ -1,0 +1,81 @@
+---
+title: SpeakTracker - 튜터 매칭 시퀀스
+---
+sequenceDiagram
+    autonumber
+    participant S as 👨‍🎓 Student
+    participant FE_S as 🖥️ Student App
+    participant API as 🔌 API Gateway
+    participant Lambda as ⚡ Lambda
+    participant DB as 🗄️ DynamoDB
+    participant WS as 🔗 WebSocket
+    participant FE_T as 🖥️ Tutor App
+    participant T as 👨‍🏫 Tutor
+
+    rect rgb(230, 245, 255)
+        Note over S,T: 1️⃣ 학생이 튜터 검색
+        S->>FE_S: 튜터 검색 버튼 클릭
+        FE_S->>API: GET /api/tutors?search=김튜터
+        API->>Lambda: Invoke TutorHandler
+        Lambda->>DB: Query Users (role=tutor)
+        DB-->>Lambda: Tutor list
+        Lambda-->>API: 200 OK
+        API-->>FE_S: {tutors: [{email, name, isAccepting}]}
+        FE_S-->>S: 튜터 목록 표시
+    end
+
+    rect rgb(255, 245, 230)
+        Note over S,T: 2️⃣ 학생이 매칭 요청 전송
+        S->>FE_S: 튜터 선택 + 메시지 작성
+        FE_S->>API: POST /api/tutors/{email}/request
+        API->>Lambda: Invoke TutorHandler
+        Lambda->>DB: Put TutorRequests<br/>{status: PENDING}
+        Lambda->>DB: Put Notifications (튜터용)
+        Lambda->>WS: Send to tutor connection
+        WS-->>FE_T: 🔔 NEW_TUTOR_REQUEST
+        FE_T-->>T: 알림 표시
+        Lambda-->>API: 200 OK
+        API-->>FE_S: {requestId, status: PENDING}
+        FE_S-->>S: "요청이 전송되었습니다"
+    end
+
+    rect rgb(230, 255, 230)
+        Note over S,T: 3️⃣ 튜터가 요청 승인
+        T->>FE_T: 요청 목록 확인
+        FE_T->>API: GET /api/tutor/requests?status=PENDING
+        API->>Lambda: Invoke TutorHandler
+        Lambda->>DB: Query TutorRequests
+        DB-->>Lambda: Request list
+        Lambda-->>FE_T: {requests: [...]}
+        FE_T-->>T: 대기 중 요청 표시
+        
+        T->>FE_T: "승인" 버튼 클릭
+        FE_T->>API: POST /api/tutors/requests/{id}/approve
+        API->>Lambda: Invoke TutorHandler
+        
+        Note over Lambda,DB: DynamoDB Transaction
+        Lambda->>DB: TransactWriteItems
+        Note right of DB: 1. Update TutorRequests (APPROVED)<br/>2. Put TutorStudents<br/>3. Put Notifications (학생용)
+        
+        Lambda->>WS: Send to student connection
+        WS-->>FE_S: 🔔 TUTOR_REQUEST_APPROVED
+        FE_S->>FE_S: Redux 상태 업데이트
+        FE_S-->>S: "튜터가 배정되었습니다!" 🎉
+        
+        Lambda-->>API: 200 OK
+        API-->>FE_T: {message: "승인 완료"}
+        FE_T-->>T: 학생 목록에 추가됨
+    end
+
+    rect rgb(255, 230, 230)
+        Note over S,T: 3️⃣-alt 튜터가 요청 거절
+        T->>FE_T: "거절" 버튼 클릭 + 사유 입력
+        FE_T->>API: POST /api/tutors/requests/{id}/reject
+        API->>Lambda: Invoke TutorHandler
+        Lambda->>DB: Update TutorRequests (REJECTED)
+        Lambda->>DB: Put Notifications (거절 사유 포함)
+        Lambda->>WS: Send to student connection
+        WS-->>FE_S: 🔔 TUTOR_REQUEST_REJECTED
+        FE_S-->>S: "요청이 거절되었습니다" + 사유
+        Lambda-->>FE_T: {message: "거절 완료"}
+    end

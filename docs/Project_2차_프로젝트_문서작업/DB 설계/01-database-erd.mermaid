@@ -1,0 +1,163 @@
+---
+title: SpeakTracker Database ERD (DynamoDB)
+---
+erDiagram
+    Users {
+        string role PK "Partition Key"
+        string email SK "Sort Key"
+        string name
+        boolean is_accepting "튜터 전용"
+        int max_student "튜터 전용"
+        string user_sub "Cognito ID"
+        timestamp created_at
+    }
+
+    TutorStudents {
+        string tutor_email PK "Partition Key"
+        string student_email SK "Sort Key"
+        timestamp assigned_at
+        string status "active/inactive"
+        string request_id FK
+        string room "practice/ai-conversation/null"
+        timestamp updated_at
+    }
+
+    TutorRequests {
+        string request_id PK "Partition Key"
+        timestamp created_at SK "Sort Key"
+        string student_email FK
+        string tutor_email FK
+        string tutor_email_status "GSI용 복합키"
+        string status "PENDING/APPROVED/REJECTED"
+        string message
+        timestamp processed_at
+        timestamp updated_at
+        int ttl "30일 후 삭제"
+    }
+
+    LearningSessions {
+        string student_email PK "Partition Key"
+        timestamp timestamp SK "Sort Key"
+        string session_type "practice/conversation"
+        int duration
+        int speaking_duration
+        int ttl "90일 후 삭제"
+    }
+
+    DailyStatistics {
+        string student_email PK "Partition Key"
+        string date SK "YYYY-MM-DD"
+        float avg_net_speaking_density
+        float avg_pace_ratio
+        float avg_response_latency
+        float avg_response_quality
+        int chat_turns_count
+        int practice_count
+        int sessions_count
+        int total_recording_time
+        int total_speaking_time
+        int ttl "1년 후 삭제"
+    }
+
+    AIConversations {
+        string student_email PK "Partition Key"
+        timestamp timestamp SK "Sort Key"
+        string conversation_id "GSI"
+        string difficulty
+        string role
+        string situation
+        int turn_count
+        string message
+        string topic
+        int ttl "30일 후 삭제"
+    }
+
+    FeedbackMessages {
+        string composite_key PK "tutor#student"
+        timestamp timestamp SK "Sort Key"
+        string tutor_email FK
+        string student_email FK
+        string message
+        string message_type "text/audio"
+        string audio_url
+        string feedback_id
+        string session_id
+        boolean websocket_sent
+        int ttl "90일 후 삭제"
+    }
+
+    WebSocketConnections {
+        string connection_id PK "Partition Key"
+        string user_email FK "GSI"
+        timestamp connected_at
+        int ttl "24시간 후 삭제"
+    }
+
+    AsyncJobStatus {
+        string job_id PK "Partition Key"
+        string status "PENDING/PROCESSING/COMPLETED/FAILED"
+        string audio_url
+        int ttl "7일 후 삭제"
+    }
+
+    SentenceAudio {
+        string sessionId PK "Partition Key"
+        int sentenceIndex SK "Sort Key"
+        timestamp completedAt
+        int durationMs
+        string english
+        string korean
+        string s3key
+        string status
+        string voiceId
+        string jobId
+        int ttl "7일 후 삭제"
+    }
+
+    PronunciationResults {
+        string student_email PK "Partition Key"
+        timestamp timestamp SK "Sort Key"
+        int audio_duration_ms
+        float completeness_score
+        string extra_words "List"
+        string feedback
+        string grade "A+/A/B/C"
+        string missed_words "List"
+        string original_text
+        float overall_score
+        string sentence_id
+        string transcribed_text
+        float word_accuracy
+        int ttl "30일 후 삭제"
+    }
+
+    Notifications {
+        string user_email PK "Partition Key"
+        string notification_id_timestamp SK "Sort Key"
+        string notification_id
+        string type "tutor_match/feedback/system"
+        string title
+        string message
+        boolean is_read
+        string is_read_created_at "GSI용 복합키"
+        timestamp created_at
+        string sent_via "List: websocket/email"
+        int ttl "90일 후 삭제"
+    }
+
+    %% Relationships
+    Users ||--o{ TutorStudents : "튜터로서 담당"
+    Users ||--o{ TutorStudents : "학생으로서 배정"
+    Users ||--o{ TutorRequests : "학생이 요청"
+    Users ||--o{ TutorRequests : "튜터가 수신"
+    Users ||--o{ LearningSessions : "학습 기록"
+    Users ||--o{ DailyStatistics : "일별 통계"
+    Users ||--o{ AIConversations : "AI 대화"
+    Users ||--o{ FeedbackMessages : "피드백 발신"
+    Users ||--o{ FeedbackMessages : "피드백 수신"
+    Users ||--o{ PronunciationResults : "발음 평가"
+    Users ||--o{ Notifications : "알림 수신"
+    Users ||--o{ WebSocketConnections : "WebSocket 연결"
+    TutorRequests ||--o| TutorStudents : "승인 시 생성"
+    LearningSessions }o--|| DailyStatistics : "집계"
+    AsyncJobStatus ||--o| SentenceAudio : "TTS 작업 연결"

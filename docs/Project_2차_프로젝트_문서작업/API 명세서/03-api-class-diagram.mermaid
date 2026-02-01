@@ -1,0 +1,395 @@
+---
+title: SpeakTracker API Data Models (Request/Response)
+---
+classDiagram
+    direction TB
+
+    %% ========== Auth Module ==========
+    namespace Auth {
+        class RegisterRequest {
+            +String email
+            +String password
+            +String name
+            +String role
+        }
+
+        class LoginRequest {
+            +String email
+            +String password
+        }
+
+        class LoginResponse {
+            +String accessToken
+            +String refreshToken
+            +UserInfo user
+        }
+
+        class UserInfo {
+            +String email
+            +String name
+            +String role
+            +String userSub
+            +DateTime createdAt
+        }
+
+        class ProfileUpdateRequest {
+            +String name
+            +Boolean isAccepting
+        }
+    }
+
+    %% ========== Tutor Module ==========
+    namespace Tutor {
+        class StudentListResponse {
+            +List~StudentInfo~ students
+            +Integer total
+            +Integer limit
+            +Integer offset
+        }
+
+        class StudentInfo {
+            +String email
+            +String name
+            +DateTime assignedAt
+            +String status
+            +String room
+            +Long updatedAt
+        }
+
+        class StudentDetailResponse {
+            +String email
+            +String name
+            +String role
+            +DateTime assignedAt
+            +String status
+            +String currentRoom
+            +TodayStats todayStats
+        }
+
+        class TodayStats {
+            +Integer totalSpeakingTime
+            +Integer totalRecordingTime
+            +Integer practiceCount
+            +Float avgAccuracy
+        }
+
+        class FeedbackRequest {
+            +String studentEmail
+            +String message
+            +String messageType
+            +String sessionId
+        }
+
+        class FeedbackResponse {
+            +String feedbackId
+            +DateTime timestamp
+            +String message
+            +Boolean websocketSent
+        }
+
+        class TutorRequestInfo {
+            +String requestId
+            +String studentEmail
+            +String studentName
+            +String message
+            +String status
+            +Long createdAt
+        }
+    }
+
+    %% ========== Student Module ==========
+    namespace Student {
+        class TutorInfo {
+            +String tutorEmail
+            +String tutorName
+            +DateTime assignedAt
+            +String status
+        }
+
+        class StudentStatusRequest {
+            +String room
+            +Boolean isLearning
+        }
+
+        class TutorSearchResponse {
+            +List~TutorListItem~ tutors
+        }
+
+        class TutorListItem {
+            +String email
+            +String name
+            +Boolean isAccepting
+            +Integer maxStudents
+            +Integer currentStudents
+        }
+
+        class MatchRequest {
+            +String message
+        }
+
+        class MatchResponse {
+            +String requestId
+            +String status
+            +String message
+        }
+    }
+
+    %% ========== Practice Module ==========
+    namespace Practice {
+        class SentenceGenerateRequest {
+            +String difficulty
+            +String topic
+            +Integer count
+        }
+
+        class SentenceGenerateResponse {
+            +List~Sentence~ sentences
+            +String sessionId
+        }
+
+        class Sentence {
+            +String id
+            +String english
+            +String korean
+            +String difficulty
+            +String topic
+        }
+
+        class PronunciationEvaluateResponse {
+            +String transcribedText
+            +String originalText
+            +Float overallScore
+            +Float wordAccuracy
+            +Float completenessScore
+            +String grade
+            +String feedback
+            +List~MissedWord~ missedWords
+            +List~String~ extraWords
+            +Integer audioDurationMs
+        }
+
+        class MissedWord {
+            +String word
+            +String reason
+        }
+    }
+
+    %% ========== AI Conversation Module ==========
+    namespace AIConversation {
+        class ConversationStartRequest {
+            +String difficulty
+            +String topic
+            +String situation
+        }
+
+        class ConversationStartResponse {
+            +String conversationId
+            +String aiMessage
+            +String aiMessageKorean
+            +String audioUrl
+        }
+
+        class ConversationMessageRequest {
+            +String conversationId
+            +String userMessage
+        }
+
+        class ConversationMessageResponse {
+            +String aiMessage
+            +String aiMessageKorean
+            +String audioUrl
+            +Integer turnCount
+            +Boolean isEnded
+            +ConversationMetrics metrics
+        }
+
+        class ConversationMetrics {
+            +Float responseLatency
+            +Float netSpeakingDensity
+            +Float paceRatio
+            +Float responseQuality
+        }
+    }
+
+    %% ========== TTS Module ==========
+    namespace TTS {
+        class TTSRequest {
+            +String text
+            +String voiceId
+            +String engine
+        }
+
+        class TTSResponse {
+            +String jobId
+            +String status
+            +String message
+        }
+
+        class TTSStatusResponse {
+            +String jobId
+            +String status
+            +String audioUrl
+            +Integer durationMs
+        }
+    }
+
+    %% ========== Session Module ==========
+    namespace Session {
+        class SessionStartRequest {
+            +String sessionType
+            +Object metadata
+        }
+
+        class SessionStartResponse {
+            +String sessionId
+            +DateTime startTime
+            +String message
+        }
+
+        class SessionEndRequest {
+            +String sessionId
+        }
+
+        class SessionEndResponse {
+            +String sessionId
+            +DateTime endTime
+            +Integer duration
+            +Integer speakingDuration
+            +String message
+        }
+
+        class SessionHistoryResponse {
+            +List~SessionInfo~ sessions
+            +Integer total
+        }
+
+        class SessionInfo {
+            +String sessionId
+            +DateTime timestamp
+            +String sessionType
+            +Integer duration
+            +Integer speakingDuration
+            +Float avgAccuracy
+            +Integer turnCount
+        }
+    }
+
+    %% ========== Statistics Module ==========
+    namespace Statistics {
+        class TodayStatsResponse {
+            +String date
+            +Integer totalSpeakingTime
+            +Integer totalRecordingTime
+            +Integer practiceCount
+            +Integer conversationCount
+            +Float avgAccuracy
+            +Integer sessionsCount
+        }
+
+        class WeeklyStatsResponse {
+            +Period period
+            +List~DailyStat~ dailyStats
+            +WeeklySummary summary
+        }
+
+        class Period {
+            +String startDate
+            +String endDate
+        }
+
+        class DailyStat {
+            +String date
+            +Integer totalSpeakingTime
+            +Integer practiceCount
+            +Float avgAccuracy
+        }
+
+        class WeeklySummary {
+            +Integer totalSpeakingTime
+            +Integer totalPracticeCount
+            +Float avgAccuracy
+        }
+    }
+
+    %% ========== Notification Module ==========
+    namespace Notification {
+        class NotificationListResponse {
+            +List~NotificationInfo~ notifications
+            +Integer total
+            +Integer unreadCount
+        }
+
+        class NotificationInfo {
+            +String notificationId
+            +String type
+            +String title
+            +String message
+            +Boolean isRead
+            +DateTime createdAt
+            +List~String~ sentVia
+        }
+    }
+
+    %% ========== Dashboard Module ==========
+    namespace Dashboard {
+        class StudentDashboardResponse {
+            +String role
+            +TodayGoal todayGoal
+            +WeeklyStats weeklyStats
+            +List~SessionInfo~ recentSessions
+            +TutorInfo tutor
+            +String aiRecommendation
+        }
+
+        class TodayGoal {
+            +Integer targetMinutes
+            +Integer currentMinutes
+            +Integer progress
+        }
+
+        class WeeklyStats {
+            +Integer totalSpeakingTime
+            +Integer practiceCount
+            +Float avgAccuracy
+        }
+
+        class TutorDashboardResponse {
+            +String role
+            +Integer studentsCount
+            +Integer maxStudents
+            +List~RecentActivity~ recentActivities
+            +List~StudentLevel~ studentsLevel
+        }
+
+        class RecentActivity {
+            +String studentEmail
+            +String studentName
+            +String activityType
+            +DateTime timestamp
+        }
+
+        class StudentLevel {
+            +String email
+            +String name
+            +String currentLevel
+            +Float avgAccuracy
+        }
+    }
+
+    %% ========== Relationships ==========
+    LoginResponse --> UserInfo
+    StudentListResponse --> StudentInfo
+    StudentDetailResponse --> TodayStats
+    TutorSearchResponse --> TutorListItem
+    SentenceGenerateResponse --> Sentence
+    PronunciationEvaluateResponse --> MissedWord
+    ConversationMessageResponse --> ConversationMetrics
+    SessionHistoryResponse --> SessionInfo
+    WeeklyStatsResponse --> Period
+    WeeklyStatsResponse --> DailyStat
+    WeeklyStatsResponse --> WeeklySummary
+    NotificationListResponse --> NotificationInfo
+    StudentDashboardResponse --> TodayGoal
+    StudentDashboardResponse --> WeeklyStats
+    TutorDashboardResponse --> RecentActivity
+    TutorDashboardResponse --> StudentLevel

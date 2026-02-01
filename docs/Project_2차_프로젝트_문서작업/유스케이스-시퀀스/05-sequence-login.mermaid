@@ -1,0 +1,55 @@
+---
+title: SpeakTracker - 로그인 시퀀스
+---
+sequenceDiagram
+    autonumber
+    participant U as 👤 User
+    participant FE as 🖥️ React App
+    participant API as 🔌 API Gateway
+    participant Lambda as ⚡ Lambda
+    participant Cognito as 🔐 Cognito
+    participant DB as 🗄️ DynamoDB
+    participant WS as 🔗 WebSocket
+
+    rect rgb(230, 255, 230)
+        Note over U,WS: 로그인 프로세스
+        U->>FE: 이메일/비밀번호 입력
+        FE->>API: POST /api/auth/login
+        API->>Lambda: Invoke AuthHandler
+        Lambda->>Cognito: initiateAuth(email, password)
+        
+        alt 인증 성공
+            Cognito-->>Lambda: JWT Tokens<br/>(accessToken, refreshToken, idToken)
+            Lambda->>DB: Query Users {role, email}
+            DB-->>Lambda: User profile (name, role)
+            Lambda-->>API: 200 OK + tokens + user
+            API-->>FE: {accessToken, refreshToken, user}
+            FE->>FE: localStorage에 토큰 저장
+            FE->>WS: WebSocket 연결
+            WS-->>FE: Connected
+            
+            alt role == "student"
+                FE-->>U: /student/home 리디렉션
+            else role == "tutor"
+                FE-->>U: /tutor/dashboard 리디렉션
+            end
+        else 인증 실패
+            Cognito-->>Lambda: NotAuthorizedException
+            Lambda-->>API: 401 Unauthorized
+            API-->>FE: "이메일 또는 비밀번호가 올바르지 않습니다"
+            FE-->>U: 에러 메시지 표시
+        end
+    end
+
+    rect rgb(255, 255, 230)
+        Note over U,WS: 토큰 자동 갱신 (1시간 후)
+        FE->>API: Any API Request (401 응답)
+        API-->>FE: 401 Unauthorized (토큰 만료)
+        FE->>API: POST /api/auth/refresh
+        API->>Lambda: Invoke AuthHandler
+        Lambda->>Cognito: refreshToken
+        Cognito-->>Lambda: New accessToken
+        Lambda-->>API: 200 OK
+        API-->>FE: {accessToken, expiresIn: 3600}
+        FE->>FE: 새 토큰으로 원래 요청 재시도
+    end

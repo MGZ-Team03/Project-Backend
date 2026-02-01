@@ -1,0 +1,44 @@
+---
+title: SpeakTracker Sequence Diagrams
+---
+
+%% ============================================================
+%% 시퀀스 다이어그램 1: 회원가입 및 이메일 인증
+%% ============================================================
+
+sequenceDiagram
+    autonumber
+    participant U as 👤 User
+    participant FE as 🖥️ React App
+    participant API as 🔌 API Gateway
+    participant Lambda as ⚡ Lambda
+    participant Cognito as 🔐 Cognito
+    participant DB as 🗄️ DynamoDB
+    participant SES as 📧 SES
+
+    rect rgb(230, 245, 255)
+        Note over U,SES: 회원가입 프로세스
+        U->>FE: 회원가입 폼 작성<br/>(이메일, 비밀번호, 이름, 역할)
+        FE->>API: POST /api/auth/register
+        API->>Lambda: Invoke AuthHandler
+        Lambda->>Cognito: signUp(email, password)
+        Cognito-->>Lambda: User created (UNCONFIRMED)
+        Lambda->>DB: Put Users {role, email, name}
+        Lambda->>SES: Send verification email
+        SES-->>U: 📧 인증 코드 이메일
+        Lambda-->>API: 200 OK
+        API-->>FE: "이메일을 확인해주세요"
+        FE-->>U: 인증 코드 입력 화면
+    end
+
+    rect rgb(255, 245, 230)
+        Note over U,SES: 이메일 인증 프로세스
+        U->>FE: 인증 코드 입력 (123456)
+        FE->>API: POST /api/auth/confirm
+        API->>Lambda: Invoke AuthHandler
+        Lambda->>Cognito: confirmSignUp(email, code)
+        Cognito-->>Lambda: User CONFIRMED
+        Lambda-->>API: 200 OK
+        API-->>FE: "인증 완료"
+        FE-->>U: 로그인 페이지로 이동
+    end
