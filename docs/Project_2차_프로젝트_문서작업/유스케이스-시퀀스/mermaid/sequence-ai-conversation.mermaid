@@ -77,9 +77,9 @@ sequenceDiagram
     end
 
     rect rgb(255, 230, 255)
-        Note over U,WS: 4️⃣ 대화 종료 (Turn 10 또는 수동)
-        alt 10턴 도달
-            Lambda-->>FE: {isEnded: true, turnCount: 10}
+        Note over U,WS: 4️⃣ 대화 종료 (Turn 15 또는 수동)
+        alt 15턴 도달
+            Lambda-->>FE: {isEnded: true, turnCount: 15}
         else 학생이 종료
             U->>FE: "END SESSION" 버튼
             FE->>API: POST /api/ai/conversation/end
@@ -88,17 +88,17 @@ sequenceDiagram
         Lambda->>DB: Update AIConversations (완료)
         Lambda->>DB: Update LearningSessions
         Lambda->>DB: Update DailyStatistics
-        Note right of DB: - chat_turns_count += 10<br/>- avg_response_quality 업데이트<br/>- total_speaking_time 업데이트
+        Note right of DB: - chat_turns_count += 15<br/>- avg_response_quality 업데이트<br/>- total_speaking_time 업데이트
         
         Lambda-->>FE: 세션 요약
-        Note right of FE: {totalTurns: 10,<br/> avgResponseQuality: 85%,<br/> totalSpeakingTime: 180s}
+        Note right of FE: {totalTurns: 15,<br/> avgResponseQuality: 85%,<br/> totalSpeakingTime: 180s}
         
         FE->>WS: room: null (대화 종료)
         WS->>Lambda: Update student status
         Lambda->>DB: Update TutorStudents (room: null)
         
         FE-->>U: 📊 대화 결과 요약
-        Note right of U: ✅ 10턴 완료<br/>✅ 응답 품질: 85%<br/>✅ 총 발화 시간: 3분
+        Note right of U: ✅ 15턴 완료<br/>✅ 응답 품질: 85%<br/>✅ 총 발화 시간: 3분
     end
 
     rect rgb(255, 255, 230)

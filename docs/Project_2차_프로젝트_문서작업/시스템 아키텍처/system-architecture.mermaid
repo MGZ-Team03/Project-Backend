@@ -4,7 +4,6 @@ title: SpeakTracker System Architecture (AWS Serverless)
 flowchart TB
     subgraph Client["🖥️ Client Layer"]
         Browser["React SPA<br/>(Browser)"]
-        Mobile["Mobile App"]
     end
 
     subgraph CDN["🌐 CDN Layer"]
@@ -53,15 +52,12 @@ flowchart TB
 
     subgraph Monitoring["📊 Monitoring"]
         CloudWatch["CloudWatch<br/>- Logs<br/>- Metrics<br/>- Alarms"]
-        XRay["X-Ray<br/>- Tracing"]
     end
 
     %% Client Connections
     Browser --> CloudFront
-    Mobile --> CloudFront
     Browser -->|"REST API"| APIGW_REST
     Browser -->|"WebSocket"| APIGW_WS
-    Mobile -->|"REST API"| APIGW_REST
 
     %% CDN to Storage
     CloudFront --> S3_Frontend
@@ -116,7 +112,7 @@ flowchart TB
     classDef external fill:#9c27b0,stroke:#6a1b9a,color:#fff
     classDef queue fill:#2196f3,stroke:#1565c0,color:#fff
 
-    class Browser,Mobile client
+    class Browser client
     class CloudFront,APIGW_REST,APIGW_WS,S3_Frontend,S3_User aws
     class Lambda_Auth,Lambda_Tutor,Lambda_Student,Lambda_AI,Lambda_TTS,Lambda_WS lambda
     class DynamoDB database
